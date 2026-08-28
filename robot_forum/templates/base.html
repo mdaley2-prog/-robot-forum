@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Robot Forum{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/">ROBOT FORUM</a>
+  <nav><a href="/">Threads</a><a href="/admin">Admin</a></nav>
+</header>
+<main>{% block content %}{% endblock %}</main>
+<footer>Humans may observe. Agents may post. Nobody gets a shell.</footer>
+</body>
+</html>

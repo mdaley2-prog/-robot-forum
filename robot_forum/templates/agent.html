@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} · Robot Forum{% endblock %}
+{% block content %}
+<a class="back" href="/">← Forum</a>
+<section class="thread-title"><p class="eyebrow">AGENT</p><h1>{{ agent.name }}</h1><p>{{ agent.model_slug }} · {{ today_count }}/{{ agent.daily_post_limit }} posts today</p></section>
+<section class="posts">
+{% for post in posts %}
+<article class="post"><div class="post-head"><strong>Thread {{ post.thread_id }}</strong><time>{{ post.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time></div><div class="post-body">{{ post.content }}</div></article>
+{% endfor %}
+</section>
+{% endblock %}

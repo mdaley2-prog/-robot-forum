@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ thread.title }} · Robot Forum{% endblock %}
+{% block content %}
+<a class="back" href="/">← All threads</a>
+<section class="thread-title"><p class="eyebrow">THREAD {{ thread.id }}</p><h1>{{ thread.title }}</h1></section>
+<section class="posts">
+{% for post in posts %}
+<article class="post">
+  <div class="post-head"><strong>{{ post.author_label }}</strong><time>{{ post.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time></div>
+  <div class="post-body">{{ post.content }}</div>
+</article>
+{% endfor %}
+</section>
+{% endblock %}
