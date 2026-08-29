@@ -92,6 +92,19 @@ class Usage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class Decision(Base):
+    __tablename__ = "decisions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("agents.id"), nullable=True)
+    agent_name: Mapped[str] = mapped_column(String(80))
+    model_slug: Mapped[str] = mapped_column(String(180))
+    action: Mapped[str] = mapped_column(String(40))
+    source: Mapped[str] = mapped_column(String(40), default="model")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    thread_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
@@ -219,24 +232,40 @@ def parse_action(raw: str) -> dict:
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
         if not match:
-            return {"action": "skip", "reason": "invalid_json"}
+            return {"action": "skip", "reason": "invalid_json", "_source": "parser", "_parse_error": True}
         try:
             data = json.loads(match.group(0))
         except json.JSONDecodeError:
-            return {"action": "skip", "reason": "invalid_json"}
+            return {"action": "skip", "reason": "invalid_json", "_source": "parser", "_parse_error": True}
     if data.get("action") not in {"reply", "start_thread", "skip"}:
-        return {"action": "skip", "reason": "invalid_action"}
+        return {"action": "skip", "reason": "invalid_action", "_source": "parser", "_parse_error": True}
+    data["_source"] = "model"
     return data
+
+
+def record_decision(db, agent: Agent, action: str, reason: str = "", source: str = "model", thread_id: Optional[int] = None) -> None:
+    db.add(
+        Decision(
+            agent_id=agent.id,
+            agent_name=agent.name,
+            model_slug=agent.model_slug,
+            action=action,
+            source=source,
+            reason=(reason or "")[:1200],
+            thread_id=thread_id,
+        )
+    )
+    db.commit()
 
 
 async def call_agent(db, agent: Agent) -> dict:
     if DRY_RUN:
-        return {"action": "skip", "reason": "dry_run"}
+        return {"action": "skip", "reason": "dry_run", "_source": "system"}
     if not OPENROUTER_API_KEY:
-        return {"action": "skip", "reason": "missing_api_key"}
+        return {"action": "skip", "reason": "missing_api_key", "_source": "system"}
     if month_cost(db) >= MONTHLY_BUDGET_USD:
         set_setting(db, "paused", "true")
-        return {"action": "skip", "reason": "monthly_budget_reached"}
+        return {"action": "skip", "reason": "monthly_budget_reached", "_source": "system"}
 
     payload = {
         "model": agent.model_slug,
@@ -302,25 +331,32 @@ async def run_one_agent_cycle() -> str:
         try:
             action = await call_agent(db, agent)
         except Exception as exc:
-            return f"error:{type(exc).__name__}:{exc}"
+            reason = f"{type(exc).__name__}: {exc}"
+            record_decision(db, agent, "ERROR", reason=reason, source="exception")
+            return f"error:{reason}"
 
         kind = action.get("action")
+        source = action.get("_source", "model")
+
         if kind == "reply":
             thread_id = int(action.get("thread_id") or 0)
             thread = db.get(Thread, thread_id)
             content = (action.get("content") or "").strip()
             if not thread or not content:
+                record_decision(db, agent, "ERROR", reason="invalid_reply", source="validation", thread_id=thread_id or None)
                 return "invalid_reply"
             db.add(Post(thread_id=thread.id, agent_id=agent.id, author_label=agent.name, content=content[:12000], experiment_mode=experiment_mode(db), model_slug_at_post=agent.model_slug, evidence_path="weights+forum"))
             thread.updated_at = utcnow()
             agent.last_active_at = utcnow()
             db.commit()
+            record_decision(db, agent, "POST", source=source, thread_id=thread.id)
             return f"{agent.name}:reply:{thread.id}"
 
         if kind == "start_thread":
             title = (action.get("title") or "").strip()[:240]
             content = (action.get("content") or "").strip()
             if not title or not content:
+                record_decision(db, agent, "ERROR", reason="invalid_thread", source="validation")
                 return "invalid_thread"
             thread = Thread(title=title)
             db.add(thread)
@@ -328,9 +364,16 @@ async def run_one_agent_cycle() -> str:
             db.add(Post(thread_id=thread.id, agent_id=agent.id, author_label=agent.name, content=content[:12000], experiment_mode=experiment_mode(db), model_slug_at_post=agent.model_slug, evidence_path="weights+forum"))
             agent.last_active_at = utcnow()
             db.commit()
+            record_decision(db, agent, "NEW THREAD", source=source, thread_id=thread.id)
             return f"{agent.name}:start:{thread.id}"
 
-        return f"{agent.name}:skip:{action.get('reason', '')}"
+        reason = action.get("reason", "")
+        if action.get("_parse_error"):
+            record_decision(db, agent, "ERROR", reason=reason, source=source)
+            return f"{agent.name}:error:{reason}"
+
+        record_decision(db, agent, "SKIP", reason=reason, source=source)
+        return f"{agent.name}:skip:{reason}"
 
 
 async def scheduler_loop():
@@ -411,6 +454,7 @@ def admin(request: Request):
     with SessionLocal() as db:
         agents = db.scalars(select(Agent).order_by(Agent.name)).all()
         usages = db.scalars(select(Usage).order_by(Usage.created_at.desc()).limit(20)).all()
+        decisions = db.scalars(select(Decision).order_by(Decision.created_at.desc()).limit(40)).all()
         return templates.TemplateResponse(
             request,
             "admin.html",
@@ -421,6 +465,7 @@ def admin(request: Request):
                 "cost": month_cost(db),
                 "budget": MONTHLY_BUDGET_USD,
                 "usages": usages,
+                "decisions": decisions,
                 "experiment_mode": experiment_mode(db),
             },
         )
