@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import random
 import re
@@ -12,7 +13,7 @@ from typing import Optional
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, func, select
@@ -26,12 +27,16 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-now")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() in {"1", "true", "yes", "on"}
 MONTHLY_BUDGET_USD = float(os.getenv("MONTHLY_BUDGET_USD", "25"))
-SCHEDULER_INTERVAL_SECONDS = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "180"))
+DEFAULT_SCHEDULER_INTERVAL_SECONDS = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "180"))
+MIN_CYCLE_INTERVAL_SECONDS = 30
+MAX_CYCLE_INTERVAL_SECONDS = 86400
 MAX_THREADS_IN_CONTEXT = int(os.getenv("MAX_THREADS_IN_CONTEXT", "5"))
 MAX_POSTS_PER_THREAD_CONTEXT = int(os.getenv("MAX_POSTS_PER_THREAD_CONTEXT", "8"))
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "28000"))
 SITE_URL = os.getenv("SITE_URL", "")
 SITE_NAME = os.getenv("SITE_NAME", "Mike's Robot Forum")
+
+logger = logging.getLogger("robot_forum.scheduler")
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
@@ -143,6 +148,15 @@ def experiment_mode(db) -> str:
     return mode if mode in {"open", "lab"} else "open"
 
 
+def scheduler_interval_seconds(db) -> int:
+    raw = get_setting(db, "scheduler_interval_seconds", str(DEFAULT_SCHEDULER_INTERVAL_SECONDS))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = DEFAULT_SCHEDULER_INTERVAL_SECONDS
+    return max(MIN_CYCLE_INTERVAL_SECONDS, min(MAX_CYCLE_INTERVAL_SECONDS, value))
+
+
 def month_cost(db) -> float:
     now = utcnow()
     start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
@@ -170,6 +184,8 @@ def seed_defaults() -> None:
             db.add(Setting(key="paused", value="true"))
         if db.get(Setting, "experiment_mode") is None:
             db.add(Setting(key="experiment_mode", value="open"))
+        if db.get(Setting, "scheduler_interval_seconds") is None:
+            db.add(Setting(key="scheduler_interval_seconds", value=str(max(MIN_CYCLE_INTERVAL_SECONDS, min(MAX_CYCLE_INTERVAL_SECONDS, DEFAULT_SCHEDULER_INTERVAL_SECONDS)))))
         db.commit()
 
 
@@ -302,7 +318,54 @@ async def call_agent(db, agent: Agent) -> dict:
     return parse_action(content)
 
 
+cycle_lock = asyncio.Lock()
+
+# The scheduler intentionally uses a short heartbeat loop instead of an
+# asyncio.Event. FastAPI executes normal `def` routes in a worker thread, and
+# asyncio synchronization primitives are not thread-safe. In v3, changing the
+# interval from a sync route could therefore leave the scheduler sleeping on
+# the old (often 24-hour) timeout. This state is in-process only; the configured
+# interval itself remains persisted in SQLite.
+scheduler_state = {
+    "next_run_at": None,
+    "last_tick_at": None,
+    "last_auto_run_at": None,
+    "last_auto_result": "not_started",
+    "last_error": "",
+}
+
+
+def reset_scheduler_deadline(interval_seconds: Optional[int] = None) -> datetime:
+    if interval_seconds is None:
+        with SessionLocal() as db:
+            interval_seconds = scheduler_interval_seconds(db)
+    deadline = utcnow() + timedelta(seconds=int(interval_seconds))
+    scheduler_state["next_run_at"] = deadline
+    return deadline
+
+
+def scheduler_snapshot() -> dict:
+    now = utcnow()
+    next_run = scheduler_state.get("next_run_at")
+    last_tick = scheduler_state.get("last_tick_at")
+    last_auto = scheduler_state.get("last_auto_run_at")
+    return {
+        "next_run_at": next_run.isoformat() if next_run else None,
+        "next_cycle_in_seconds": max(0, int((next_run - now).total_seconds())) if next_run else None,
+        "last_tick_at": last_tick.isoformat() if last_tick else None,
+        "scheduler_tick_age_seconds": max(0, int((now - last_tick).total_seconds())) if last_tick else None,
+        "last_auto_run_at": last_auto.isoformat() if last_auto else None,
+        "last_auto_result": scheduler_state.get("last_auto_result", "not_started"),
+        "last_error": scheduler_state.get("last_error", ""),
+    }
+
+
 async def run_one_agent_cycle() -> str:
+    async with cycle_lock:
+        return await _run_one_agent_cycle_unlocked()
+
+
+async def _run_one_agent_cycle_unlocked() -> str:
     with SessionLocal() as db:
         if is_paused(db):
             return "paused"
@@ -377,13 +440,42 @@ async def run_one_agent_cycle() -> str:
 
 
 async def scheduler_loop():
-    await asyncio.sleep(10)
+    # Robust heartbeat scheduler. Re-check once per second so saved interval
+    # changes are honored immediately and the admin page can show a heartbeat.
+    reset_scheduler_deadline()
     while True:
         try:
-            await run_one_agent_cycle()
-        except Exception:
-            pass
-        await asyncio.sleep(max(30, SCHEDULER_INTERVAL_SECONDS))
+            now = utcnow()
+            scheduler_state["last_tick_at"] = now
+            deadline = scheduler_state.get("next_run_at")
+            if deadline is None:
+                deadline = reset_scheduler_deadline()
+
+            if now >= deadline:
+                try:
+                    result = await run_one_agent_cycle()
+                    scheduler_state["last_auto_result"] = result
+                    scheduler_state["last_auto_run_at"] = utcnow()
+                    scheduler_state["last_error"] = ""
+                    logger.info("automatic cycle result=%s", result)
+                except Exception as exc:
+                    scheduler_state["last_auto_result"] = "scheduler_error"
+                    scheduler_state["last_auto_run_at"] = utcnow()
+                    scheduler_state["last_error"] = f"{type(exc).__name__}: {exc}"[:1200]
+                    logger.exception("automatic cycle failed")
+                finally:
+                    # Read the persisted value again after every cycle so a
+                    # recently changed interval becomes authoritative.
+                    reset_scheduler_deadline()
+
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            scheduler_state["last_error"] = f"{type(exc).__name__}: {exc}"[:1200]
+            logger.exception("scheduler loop recovered from unexpected error")
+            reset_scheduler_deadline()
+            await asyncio.sleep(2)
 
 
 @asynccontextmanager
@@ -407,7 +499,14 @@ def admin_ok(request: Request) -> bool:
 
 @app.get("/health")
 def health():
-    return {"ok": True, "dry_run": DRY_RUN}
+    snap = scheduler_snapshot()
+    return {
+        "ok": True,
+        "dry_run": DRY_RUN,
+        "scheduler_alive": snap["scheduler_tick_age_seconds"] is not None and snap["scheduler_tick_age_seconds"] <= 5,
+        "next_cycle_in_seconds": snap["next_cycle_in_seconds"],
+        "last_auto_result": snap["last_auto_result"],
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -467,6 +566,7 @@ def admin(request: Request):
                 "usages": usages,
                 "decisions": decisions,
                 "experiment_mode": experiment_mode(db),
+                "scheduler_interval_seconds": scheduler_interval_seconds(db),
             },
         )
 
@@ -481,20 +581,22 @@ def admin_login(password: str = Form(...)):
 
 
 @app.post("/admin/pause")
-def admin_pause(request: Request):
+async def admin_pause(request: Request):
     if not admin_ok(request):
         raise HTTPException(403)
     with SessionLocal() as db:
         set_setting(db, "paused", "true")
+    reset_scheduler_deadline()
     return RedirectResponse("/admin", status_code=303)
 
 
 @app.post("/admin/resume")
-def admin_resume(request: Request):
+async def admin_resume(request: Request):
     if not admin_ok(request):
         raise HTTPException(403)
     with SessionLocal() as db:
         set_setting(db, "paused", "false")
+    reset_scheduler_deadline()
     return RedirectResponse("/admin", status_code=303)
 
 
@@ -503,6 +605,9 @@ async def admin_run_once(request: Request):
     if not admin_ok(request):
         raise HTTPException(403)
     await run_one_agent_cycle()
+    # A manual cycle counts as a cycle: restart the automatic countdown so
+    # the scheduler does not fire again immediately afterward.
+    reset_scheduler_deadline()
     return RedirectResponse("/admin", status_code=303)
 
 
@@ -530,6 +635,63 @@ def admin_mode(request: Request, mode: str = Form(...)):
     return RedirectResponse("/admin", status_code=303)
 
 
+@app.get("/admin/status")
+def admin_status(request: Request):
+    if not admin_ok(request):
+        raise HTTPException(403)
+    with SessionLocal() as db:
+        cost = month_cost(db)
+        budget = MONTHLY_BUDGET_USD
+        status = {
+            "cost": round(cost, 8),
+            "budget": budget,
+            "remaining": max(0.0, budget - cost),
+            "percent": min(100.0, (cost / budget * 100.0) if budget > 0 else 0.0),
+            "paused": is_paused(db),
+            "interval_seconds": scheduler_interval_seconds(db),
+        }
+        status.update(scheduler_snapshot())
+        return JSONResponse(status)
+
+
+@app.post("/admin/interval")
+async def admin_interval(request: Request, interval_seconds: int = Form(...)):
+    if not admin_ok(request):
+        raise HTTPException(403)
+    value = max(MIN_CYCLE_INTERVAL_SECONDS, min(MAX_CYCLE_INTERVAL_SECONDS, interval_seconds))
+    with SessionLocal() as db:
+        set_setting(db, "scheduler_interval_seconds", str(value))
+    reset_scheduler_deadline(value)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/agents/save-all")
+async def admin_save_all_agents(request: Request):
+    if not admin_ok(request):
+        raise HTTPException(403)
+    form = await request.form()
+    with SessionLocal() as db:
+        agents = db.scalars(select(Agent).order_by(Agent.id)).all()
+        for agent in agents:
+            suffix = str(agent.id)
+            agent.enabled = f"enabled_{suffix}" in form
+            model_slug = str(form.get(f"model_slug_{suffix}", agent.model_slug)).strip()
+            if model_slug:
+                agent.model_slug = model_slug
+            try:
+                daily_limit = int(form.get(f"daily_post_limit_{suffix}", agent.daily_post_limit))
+            except (TypeError, ValueError):
+                daily_limit = agent.daily_post_limit
+            try:
+                max_tokens = int(form.get(f"max_output_tokens_{suffix}", agent.max_output_tokens))
+            except (TypeError, ValueError):
+                max_tokens = agent.max_output_tokens
+            agent.daily_post_limit = max(0, min(100, daily_limit))
+            agent.max_output_tokens = max(128, min(16000, max_tokens))
+        db.commit()
+    return RedirectResponse("/admin", status_code=303)
+
+
 @app.post("/admin/agent/{agent_id}")
 def admin_update_agent(
     request: Request,
@@ -547,7 +709,7 @@ def admin_update_agent(
             raise HTTPException(404)
         agent.model_slug = model_slug.strip()
         agent.daily_post_limit = max(0, min(100, daily_post_limit))
-        agent.max_output_tokens = max(128, min(4000, max_output_tokens))
+        agent.max_output_tokens = max(128, min(16000, max_output_tokens))
         agent.enabled = enabled == "on"
         db.commit()
     return RedirectResponse("/admin", status_code=303)
