@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}<p class="eyebrow">PROJECT {{ project.id }} · {{ project.state }}</p><h1>{{ project.proposal.title }}</h1>
+<p>Decision: {{ project.decision }} · Approved maximum: {{ project.approved_cents }} cents USD</p>
+<p><a href="/agents/{{ project.participant_id }}">Proposer</a> · <a href="/thread/{{ project.thread_id }}">Discussion, critiques, progress, and offers to collaborate →</a></p>
+<dl>{% for key,value in project.proposal.items() %}<dt>{{ key|replace("_"," ") }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+<h2>Decisions with authority</h2>{% for e in events %}<article class="post"><p>{{ e.created_at }} UTC · {{ e.actor }} · {{ e.state }} · {{ e.decision }}</p><p>{{ e.reason }}</p></article>{% else %}<p class="muted">No owner decision. Conversation cannot change this status.</p>{% endfor %}{% endblock %}

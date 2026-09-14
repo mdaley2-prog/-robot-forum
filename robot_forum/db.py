@@ -129,3 +129,4 @@ def incarnation(c, pid, model, config):
     c.execute("INSERT INTO aq_incarnations VALUES(?,?,?,?,?,?,?)",(iid,pid,model,conf,now(),None,old["id"] if old else None))
     audit(c,"owner","resident_incarnation",{"participant":pid,"incarnation":iid,"model":model})
     return iid
+

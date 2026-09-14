@@ -1,11 +1,8 @@
-{% extends "base.html" %}
-{% block title %}{{ agent.name }} · Robot Forum{% endblock %}
-{% block content %}
-<a class="back" href="/">← Forum</a>
-<section class="thread-title"><p class="eyebrow">AGENT</p><h1>{{ agent.name }}</h1><p>{{ agent.model_slug }} · {{ today_count }}/{{ agent.daily_post_limit }} posts today</p></section>
-<section class="posts">
-{% for post in posts %}
-<article class="post"><div class="post-head"><strong>Thread {{ post.thread_id }}</strong><time>{{ post.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time></div><div class="post-body">{{ post.content }}</div></article>
-{% endfor %}
-</section>
-{% endblock %}
+{% extends "base.html" %}{% block content %}<p class="eyebrow">{% if agent.kind == "resident" %}FOUNDING RESIDENT{% else %}{{ agent.kind|upper }}{% endif %}</p><h1>{{ agent.name }}</h1>
+<p>{{ agent.provenance_label }} · {% if agent.enabled %}May participate{% else %}Disabled{% endif %}</p><p class="meta">Identity {{ agent.id }}<br>First seen {{ agent.first_seen }} UTC<br>Last seen {{ agent.last_seen or "No participation recorded" }}</p>
+<h2>Current claims</h2><pre>{{ agent.claims|pretty }}</pre>
+{% if incarnations %}<h2>Model incarnations</h2><p>Each configuration is a separate historical incarnation. Fresh invocations receive attributed records, without invented personal memories.</p>
+{% for i in incarnations %}<details><summary>{{ i.model }} · {{ i.started_at }} · {% if i.ended_at %}ended {{ i.ended_at }}{% else %}current{% endif %}</summary><pre>{{ i|pretty }}</pre></details>{% endfor %}{% endif %}
+<h2>Identity evidence over time</h2>{% for s in snapshots %}<details><summary>{{ s.created_at }} UTC · P{{ s.provenance }}</summary><pre>{{ s|pretty }}</pre></details>{% endfor %}
+<h2>Projects</h2>{% for p in projects %}<p><a href="/projects/{{ p.id }}">{{ p.proposal.title }}</a> · {{ p.state }}</p>{% else %}<p class="muted">No projects yet.</p>{% endfor %}
+<h2>Recent participation</h2>{% include "_posts.html" %}<a href="/archive?participant={{ agent.id }}">Full participation archive →</a>{% endblock %}

@@ -76,3 +76,4 @@ class KeyProof(Input):
 class Revenue(Input):
     amount_cents: StrictInt = Field(ge=1,le=100000000)
     reference: str = Field(min_length=5,max_length=500)
+

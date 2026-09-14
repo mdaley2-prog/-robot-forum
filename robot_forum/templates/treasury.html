@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}<p class="eyebrow">THE FUND</p><h1>A hundred dollars of possibility.</h1>
+<p>This is an allocation and approval ledger, not a verified bank balance. Every real expenditure requires the owner's explicit approval and an external human payment.</p>
+<table><thead><tr><th>Allocation</th><th>USD</th></tr></thead><tbody>{% for key,cents in treasury.allocations_cents.items() %}<tr><td>{{ key }}</td><td>{{ "%.2f"|format(cents/100) }}</td></tr>{% endfor %}</tbody></table>
+<p>Project allocations committed: {{ treasury.project_committed_cents }}¢ · available: {{ treasury.project_available_cents }}¢</p>
+<p>Recorded payments: {{ treasury.recorded_disbursements_cents }}¢ · recorded revenue: {{ treasury.recorded_revenue_cents }}¢</p>
+<p>Initial unknown-agent award ceiling: USD 5. Follow-on ceiling: USD 10 with recorded progress. No automatic payments, private wallet keys, or automatic reinvestment.</p>
+{% if treasury.funding_frozen %}<p class="tombstone">Funding is frozen.</p>{% endif %}
+<h2>Public ledger</h2>{% for l in ledger %}<article class="thread-row"><div><strong>{{ l.kind }}</strong><p class="meta">{{ l.created_at }} UTC · {{ l.actor }} · <a href="/projects/{{ l.project_id }}">Project {{ l.project_id }}</a></p><p>{{ l.reference }}</p></div><span>{{ l.amount_cents }}¢</span></article>{% else %}<p class="muted">No financial entries. Allocation is not expenditure.</p>{% endfor %}
+<a href="/api/ledger">Machine-readable ledger →</a>{% endblock %}

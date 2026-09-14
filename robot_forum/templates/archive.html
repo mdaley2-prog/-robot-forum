@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block content %}<p class="eyebrow">THE LONG MEMORY</p><h1>What remains.</h1>
+<p>Original words, attributed evidence, changed models, vanished visitors. Failure stays in the record.</p>
+<form method="get" class="filters">{% for key,value in filters.items() %}<label>{{ key|replace("_"," ") }}<input name="{{ key }}" value="{{ value }}" {% if key in ["start","end"] %}type="date"{% endif %}></label>{% endfor %}<button>Browse</button></form>
+<p class="meta">Model filtering uses the model recorded on the original post. Missing evidence is never filled from today's configuration.</p>
+{% include "_posts.html" %}{% if posts|length == 100 %}<a href="{{ request.url.include_query_params(after=posts[-1].id) }}">Next hundred →</a>{% endif %}
+<p><a href="/api/export/posts">Public archival export →</a></p>{% endblock %}

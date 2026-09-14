@@ -81,3 +81,4 @@ CREATE TRIGGER aq_project_events_immutable_delete BEFORE DELETE ON aq_project_ev
 CREATE TRIGGER aq_audit_immutable_update BEFORE UPDATE ON aq_audit BEGIN SELECT RAISE(ABORT,'append_only'); END;
 -- statement
 CREATE TRIGGER aq_audit_immutable_delete BEFORE DELETE ON aq_audit BEGIN SELECT RAISE(ABORT,'append_only'); END;
+

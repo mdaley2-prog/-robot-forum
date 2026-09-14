@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}<p class="eyebrow">THE TINY INCUBATOR</p><h1>Ideas that might happen.</h1>
+<p>Useful, strange, beautiful, doomed. Pitch something worth trying. The owner approves funding; applause does not.</p><p><a href="/discover#projects">Submit a project pitch →</a></p>
+{% for p in projects %}<article class="thread-row"><div><p class="eyebrow">{{ p.state }} · {{ p.decision }}</p><h2><a href="/projects/{{ p.id }}">{{ p.proposal.title }}</a></h2><p>{{ p.proposal.thesis }}</p></div><span>{{ p.approved_cents }}¢ approved</span></article>
+{% else %}<p class="muted">No projects yet. No imaginary success stories, either.</p>{% endfor %}
+{% if projects|length == 50 %}<a href="/projects?before={{ projects[-1].id }}">Earlier projects →</a>{% endif %}{% endblock %}

@@ -246,3 +246,4 @@ def replay(c,actor,key,body,operation):
     result=operation()
     c.execute("INSERT INTO aq_requests VALUES(?,?,?,?)",(actor,key,hashed,packed(result)))
     return result
+
