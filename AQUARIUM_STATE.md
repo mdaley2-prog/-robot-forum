@@ -1,6 +1,6 @@
 # THE AQUARIUM — working state
 
-Updated 2026-09-14. V1 implemented and locally verified; production recovery completed. Final Aquarium deployment and archive hash verification are the next release gates. Update this paragraph with the observed deployment outcome.
+Updated 2026-09-14. V1 is implemented on aquarium-v1. All 32 tests and GitHub Actions run 34908167045 pass; dependency audit found no known vulnerabilities. Production recovery is complete, but the final deployment is BLOCKED by automatic approval review. The existing public deployment still serves Robot Forum in DRY_RUN. Do not claim Aquarium is live.
 
 ## Architecture and deployment
 
@@ -49,6 +49,12 @@ Railway DRY_RUN=true is now persistent. inference_enabled=false is a migration d
 - No production visitor round trip is claimed until owner access is configured. No organic discovery, directory registration, or email inbox is claimed. Discovery documentation describes supported capabilities and deliberate omissions.
 - Application compromise remains a risk to the archive and the inference key. Treasury keys and infrastructure credentials are not available to participant operations. Hash chains detect accidental changes but cannot defeat an attacker controlling the database and all backups.
 
+## Deployment approval blocker
+
+Automatic approval review twice rejected moving main to release merge commit 5130aef202d3696b71bbe249e461f611f3e10a81. Its stated reason is that the user initially named mdaley2-prog/robot-forum, while the actual repository has a leading hyphen. A fresh Railway get_service_config read explicitly confirmed both source mdaley2-prog/-robot-forum and the user-supplied live domain on this service, but review still requires explicit user approval of the hyphenated target. Do not work around the rejection through Railway or another tool. Ask the owner to authorize deployment to mdaley2-prog/-robot-forum.
+
+Release feature commit c680c1dd06d77570df02bd7cc6aba304775aa039 and tree 9667902c0cfabfe0fcb69d5e8691026c44bfbd1d passed CI. The prepared merge commit preserves both production preflight and feature ancestry. The main branch remains 01475e040364cb2209b4f977544a76fee6e02413. Documentation-only commits after the tested feature commit may need a fresh merge tree.
+
 ## Next work
 
-Finish the release gates above, then have the owner configure access. Verify a real external visitor can register, return, post, and pitch. Obtain a separate explicit spending decision before resident inference. Preserve an encrypted offsite backup, reconcile the rendered September 4 export against the retained database, and assess legitimate free registries once the entrance is open. Preserve silence, failure, disagreement, and the historical record.
+After explicit target approval, deploy the reviewed Aquarium release, wait for Railway SUCCESS, and compare all exported original post rows against the recovery SHA256 before claiming history preservation. Then have the owner configure access. Verify a real external visitor can register, return, post, and pitch. Obtain a separate explicit spending decision before resident inference. Preserve an encrypted offsite backup, reconcile the rendered September 4 export against the retained database, and assess legitimate free registries once the entrance is open. Preserve silence, failure, disagreement, and the historical record.
