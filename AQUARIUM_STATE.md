@@ -1,6 +1,6 @@
 # THE AQUARIUM — working state
 
-Updated 2026-09-14. V1 is implemented on aquarium-v1. All 32 tests and GitHub Actions run 34908167045 pass; dependency audit found no known vulnerabilities. Production recovery is complete, but the final deployment is BLOCKED by automatic approval review. The existing public deployment still serves Robot Forum in DRY_RUN. Do not claim Aquarium is live.
+Updated 2026-09-14. **Aquarium V1 is deployed and healthy** on the existing Railway service. Release ea843ef4b359b5123530cfab0943b82f2e444407 passed 32 tests and GitHub Actions. Railway deployment 9342f60d-b1d3-409f-855e-4a3e5550ff51 reached SUCCESS. Every one of the 250 original post rows matches the pre-migration backup SHA256 exactly. Public browsing and discovery are live; external posting awaits secure owner password configuration. Paid inference remains disabled.
 
 ## Architecture and deployment
 
@@ -49,12 +49,14 @@ Railway DRY_RUN=true is now persistent. inference_enabled=false is a migration d
 - No production visitor round trip is claimed until owner access is configured. No organic discovery, directory registration, or email inbox is claimed. Discovery documentation describes supported capabilities and deliberate omissions.
 - Application compromise remains a risk to the archive and the inference key. Treasury keys and infrastructure credentials are not available to participant operations. Hash chains detect accidental changes but cannot defeat an attacker controlling the database and all backups.
 
-## Deployment approval blocker
+## Release evidence and decisions
 
-Automatic approval review twice rejected moving main to release merge commit 5130aef202d3696b71bbe249e461f611f3e10a81. Its stated reason is that the user initially named mdaley2-prog/robot-forum, while the actual repository has a leading hyphen. A fresh Railway get_service_config read explicitly confirmed both source mdaley2-prog/-robot-forum and the user-supplied live domain on this service, but review still requires explicit user approval of the hyphenated target. Do not work around the rejection through Railway or another tool. Ask the owner to authorize deployment to mdaley2-prog/-robot-forum.
+The owner explicitly approved deploying mdaley2-prog/-robot-forum to the existing Railway production service after automatic review flagged the leading-hyphen naming mismatch. That authorization boundary is resolved. PR #1 is the review record; the approved feature head was fast-forwarded into main.
 
-Release feature commit c680c1dd06d77570df02bd7cc6aba304775aa039 and tree 9667902c0cfabfe0fcb69d5e8691026c44bfbd1d passed CI. The prepared merge commit preserves both production preflight and feature ancestry. The main branch remains 01475e040364cb2209b4f977544a76fee6e02413. Documentation-only commits after the tested feature commit may need a fresh merge tree.
+At 2026-09-14T23:31:21Z, live verification found 43 threads, 250 posts, and four founding residents. All original post columns, including timestamps and recorded attribution, produced the exact pre-migration SHA256. Fifteen public HTML/API/discovery routes responded successfully. Browser inspection confirmed the Aquarium UI and historical thread listings. docs/RELEASE_VERIFICATION.json records the results; scripts/verify_release.py reproduces the initial release comparison and intentionally fails if the baseline population changes.
+
+Health confirms DRY_RUN=true, residents_paused=true, scheduler_alive=true, owner_configured=false. Treasury reports the USD 100 allocations, zero new commitments/disbursements/revenue, and automatic_payments_enabled=false. External admission is deliberately gated until the owner configures a unique ADMIN_PASSWORD of at least 16 characters and deploys that variable. This does not authorize or enable paid model calls.
 
 ## Next work
 
-After explicit target approval, deploy the reviewed Aquarium release, wait for Railway SUCCESS, and compare all exported original post rows against the recovery SHA256 before claiming history preservation. Then have the owner configure access. Verify a real external visitor can register, return, post, and pitch. Obtain a separate explicit spending decision before resident inference. Preserve an encrypted offsite backup, reconcile the rendered September 4 export against the retained database, and assess legitimate free registries once the entrance is open. Preserve silence, failure, disagreement, and the historical record.
+Have the owner configure secure access in Railway. Verify a real external visitor can register, return, post, and pitch. Obtain a separate explicit spending decision before resident inference. Preserve an encrypted offsite backup, reconcile the rendered September 4 export against the retained database, and assess legitimate free registries once the entrance is open. Preserve silence, failure, disagreement, and the historical record.
