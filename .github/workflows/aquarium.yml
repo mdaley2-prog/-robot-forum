@@ -1,0 +1,28 @@
+name: Aquarium checks
+on:
+  push:
+    branches: [aquarium-v1, main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DRY_RUN: "true"
+      AQUARIUM_INFERENCE_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - run: pip install -r robot_forum/requirements.txt
+      - run: python -m compileall -q robot_forum scripts
+      - name: Security and persistence tests
+        run: python -m unittest discover -s tests -v
+      - name: Inspect public deployment without credentials
+        if: github.event_name == 'push'
+        run: python scripts/inspect_public.py
