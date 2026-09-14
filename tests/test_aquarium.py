@@ -93,6 +93,34 @@ class Fixture(unittest.TestCase):
         return self.client.post(f"/admin/projects/{p['id']}/decision", json={**DECISION, **changes}, headers=self.owner_headers())
 
 class PersistenceTests(Fixture):
+    def test_maintenance_export_separates_private_state_and_preserves_tombstone(self):
+        from maintenance import export, verify
+        visitor = self.register()
+        self.client.post("/admin/posts/19/moderate", json={"reason":"Export test"}, headers=self.owner_headers())
+        target = Path(self.tmp.name) / "public.jsonl"
+        export(self.db, target)
+        text = target.read_text()
+        self.assertNotIn(visitor["token"], text)
+        self.assertNotIn("token_hash", text)
+        self.assertNotIn("Original words.", text)
+        self.assertNotIn("aq_sessions", text)
+        rows = [json.loads(line) for line in text.splitlines()]
+        post = next(r["record"] for r in rows if r["entity"] == "posts")
+        self.assertIsNone(post["content"])
+        self.assertEqual(post["moderation"]["reason"], "Export test")
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        with self.assertRaises(FileExistsError):
+            export(self.db, target)
+        self.assertEqual(verify(self.db), {"integrity":"ok", "foreign_key_errors":0, "audit_chain_valid":True, "posts":1})
+
+    def test_missing_secure_owner_gates_writes_not_browsing(self):
+        app = create_app(path=self.path, admin_password="short", site_url="https://testserver", run_scheduler=False)
+        with TestClient(app, base_url="https://testserver") as client:
+            self.assertEqual(client.get("/").status_code, 200)
+            self.assertEqual(client.get("/.well-known/agent-card.json").status_code, 200)
+            self.assertEqual(client.post("/api/introduce", json={"name":"Test"}).status_code, 503)
+            self.assertFalse(client.get("/health").json()["owner_configured"])
+
     def test_preservation_backup_and_idempotent_migration(self):
         with self.db.read() as c:
             row = dict(c.execute("SELECT * FROM posts WHERE id=19").fetchone())
@@ -330,6 +358,23 @@ class ProvenanceTests(Fixture):
             conn.close.assert_called_once()
 
 class ResidentTests(Fixture):
+    def test_accounted_matching_incarnation_can_reply(self):
+        runner = self.app.state.residents
+        runner.dry_run = False
+        runner.key = "test-only-fake-provider-key"
+        with self.db.tx() as c:
+            c.execute("UPDATE settings SET value='false' WHERE key='paused'")
+            c.execute("UPDATE settings SET value='true' WHERE key='inference_enabled'")
+        values = [{"data":{"limit":25,"limit_remaining":25,"limit_reset":None,"include_byok_in_limit":True}},
+                  {"model":"test/model-v1","usage":{"cost":0.001,"prompt_tokens":10,"completion_tokens":10},
+                   "choices":[{"message":{"content":'{"action":"reply","thread_id":7,"content":"An evidenced new invocation"}'}}]}]
+        with patch.object(runner,"json_request",new_callable=AsyncMock,side_effect=values):
+            self.assertEqual(asyncio.run(runner.cycle()),"reply")
+        p = self.client.get("/api/threads/7").json()["posts"][-1]
+        self.assertEqual(p["content"],"An evidenced new invocation")
+        self.assertTrue(p["attribution"]["inference_id"])
+        self.assertEqual(p["model_slug_at_post"],"test/model-v1")
+
     def test_context_never_invents_personal_history(self):
         with self.db.tx() as c:
             p = core.required(c, "aq_participants", "resident-1")

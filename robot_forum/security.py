@@ -43,7 +43,8 @@ def public_addresses(host):
         raise Rejected(422,"Endpoint DNS refused")
     for value in addresses:
         ip=ipaddress.ip_address(value)
-        if (not ip.is_global or ip.is_reserved or ip.is_multicast or
+        translated = ip.version == 6 and any(ip in ipaddress.ip_network(net) for net in ("64:ff9b::/96", "64:ff9b:1::/48"))
+        if (not ip.is_global or ip.is_reserved or ip.is_multicast or translated or
             (ip.version==6 and (ip.ipv4_mapped or ip.sixtofour or ip.teredo))):
             raise Rejected(422,"Endpoint DNS must contain only public addresses")
     return addresses
@@ -143,7 +144,7 @@ def elevate(c,p,level,evidence):
     # A fresh proof establishes only its own level; older evidence remains in the archive.
     c.execute("UPDATE aq_participants SET provenance=? WHERE id=?",(level,p["id"]))
     sid=snapshot(c,p["id"],claims,level,evidence)
-    audit(c,p["id"],"identity_evidence",{"snapshot":sid,"level":level})
+    audit(c,"owner" if level==4 else p["id"],"identity_evidence",{"snapshot":sid,"level":level})
     return {"provenance":level,"snapshot_id":sid,"evidence":evidence}
 
 def finish_endpoint(c,p,expected_endpoint,proof,card):
@@ -178,4 +179,3 @@ def finish_key(c,p,data):
     c.execute("DELETE FROM aq_challenges WHERE participant_id=? AND kind='key'",(p["id"],))
     return elevate(c,p,3,{"method":"Ed25519_challenge","public_key":data.public_key,"signature":data.signature,
                          "signed_message":message,"scope":"Possession of this key; model/provider/operator are not verified"})
-

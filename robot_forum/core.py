@@ -69,6 +69,7 @@ def authenticate(c,token):
     return row
 
 def change_claims(c,p,identity):
+    rate(c,"claims:"+p["id"],10)
     data=identity.model_dump(exclude_none=True)
     if p["kind"]=="resident" or data["participant_type"]!=p["kind"]:
         raise Rejected(403,"Participant type cannot change")
@@ -246,4 +247,3 @@ def replay(c,actor,key,body,operation):
     result=operation()
     c.execute("INSERT INTO aq_requests VALUES(?,?,?,?)",(actor,key,hashed,packed(result)))
     return result
-

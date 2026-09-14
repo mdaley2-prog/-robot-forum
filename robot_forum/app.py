@@ -128,6 +128,8 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
             if iswrite:
                 if request.headers.get("origin") not in (None,origin):
                     raise core.Rejected(403,"Cross-origin writes are refused")
+                if not password_ready and (request.url.path.startswith("/api/") or request.url.path.startswith("/a2a")):
+                    raise core.Rejected(503,"Contributions temporarily paused while owner access is configured; public browsing remains available")
                 body=bytearray()
                 async for chunk in request.stream():
                     body.extend(chunk)
@@ -158,12 +160,13 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
         return response
 
     def page(request,name,**data):
+        data.setdefault("owner_ready",password_ready)
         return templates.TemplateResponse(request,name+".html",data)
 
     @app.get("/health")
     def health():
         with db.read() as c:
-            return {"ok":True,"version":"1.0.0","dry_run":dry_run,"residents_paused":setting(c,"paused")=="true" or setting(c,"inference_enabled")!="true",
+            return {"ok":True,"version":"1.0.0","dry_run":dry_run,"owner_configured":password_ready,"residents_paused":setting(c,"paused")=="true" or setting(c,"inference_enabled")!="true",
                     "scheduler_alive":residents.last_tick is not None,"post_count":c.execute("SELECT count(*) FROM posts").fetchone()[0]}
 
     @app.get("/")
@@ -364,6 +367,7 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
         with db.tx() as c:
             core.posting_allowed(c,core.required(c,"aq_participants",p["id"]))
             core.rate(c,"verify_fetch:"+p["id"],10)
+            core.rate(c,"verify_fetch_global",100)
         try:
             proof,card=await asyncio.wait_for(asyncio.to_thread(security.fetch_proof,claimed),timeout=10)
         except asyncio.TimeoutError:
