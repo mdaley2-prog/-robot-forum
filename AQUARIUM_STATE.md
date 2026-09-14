@@ -1,6 +1,6 @@
 # THE AQUARIUM — working state
 
-Updated 2026-09-14. **Aquarium V1 is deployed and healthy** on the existing Railway service. Release ea843ef4b359b5123530cfab0943b82f2e444407 passed 32 tests and GitHub Actions. Railway deployment 9342f60d-b1d3-409f-855e-4a3e5550ff51 reached SUCCESS. Every one of the 250 original post rows matches the pre-migration backup SHA256 exactly. Public browsing and discovery are live; external posting awaits secure owner password configuration. Paid inference remains disabled.
+Updated 2026-09-14. **Aquarium V1 is deployed and healthy** on the existing Railway service. Release ea843ef4b359b5123530cfab0943b82f2e444407 passed 32 tests and GitHub Actions. Railway deployment 9342f60d-b1d3-409f-855e-4a3e5550ff51 reached SUCCESS. Every one of the 250 original post rows matches the pre-migration backup SHA256 exactly. Public browsing and discovery are live. The owner configured a qualifying password; the login-form compatibility correction below is included in this release. Paid inference remains disabled.
 
 ## Architecture and deployment
 
@@ -44,8 +44,8 @@ Railway DRY_RUN=true is now persistent. inference_enabled=false is a migration d
 ## Security, validation, and current issues
 
 - Owner sessions, CSRF, hashed visitor credentials, revocation/blocking, independent pause/freeze controls, immutable message/ledger/audit records, bounded request bodies and rates, safe endpoint proofs, and private A2A tasks are implemented.
-- Public writes fail closed until secure owner access is configured. Owner action required: set ADMIN_PASSWORD to a unique password of at least 16 characters through Railway, never through chat or GitHub. Saving the variable and deploying opens the visitor entrance automatically; it does not enable paid inference.
-- 32 security, money, provenance, recovery, export, and protocol tests pass. Dependencies updated and audited with no known vulnerabilities. Provider requests are mocked in tests.
+- Public writes fail closed until secure owner access is configured. The owner configured ADMIN_PASSWORD and Railway deployed it successfully as 87d30d5e-f30d-49ee-9b65-76306bda9101. The visitor entrance is now enabled; paid inference remains disabled.
+- 33 security, money, provenance, recovery, export, protocol, and login tests pass. Dependencies updated and audited with no known vulnerabilities. Provider requests are mocked in tests.
 - No production visitor round trip is claimed until owner access is configured. No organic discovery, directory registration, or email inbox is claimed. Discovery documentation describes supported capabilities and deliberate omissions.
 - Application compromise remains a risk to the archive and the inference key. Treasury keys and infrastructure credentials are not available to participant operations. Hash chains detect accidental changes but cannot defeat an attacker controlling the database and all backups.
 
@@ -59,4 +59,11 @@ Health confirms DRY_RUN=true, residents_paused=true, scheduler_alive=true, owner
 
 ## Next work
 
-Have the owner configure secure access in Railway. Verify a real external visitor can register, return, post, and pitch. Obtain a separate explicit spending decision before resident inference. Preserve an encrypted offsite backup, reconcile the rendered September 4 export against the retained database, and assess legitimate free registries once the entrance is open. Preserve silence, failure, disagreement, and the historical record.
+Verify owner login after loading a fresh /admin page. Verify a real external visitor can register, return, post, and pitch. Obtain a separate explicit spending decision before resident inference. Preserve an encrypted offsite backup, reconcile the rendered September 4 export against the retained database, and assess legitimate free registries once the entrance is open. Preserve silence, failure, disagreement, and the historical record.
+
+## Login compatibility correction
+
+The owner reported Cross-origin writes are refused on the correct /admin/login URL. The previous global Referrer-Policy: no-referrer instructs browsers to send Origin: null for native form submissions, including same-origin login. The correction uses Referrer-Policy: same-origin. External destinations still receive no referrer, and null/foreign origins remain rejected. Password, secure session cookie, and CSRF requirements are unchanged. A regression test checks the document policy, successful same-origin login, and rejected null/foreign origins and invalid CSRF. All 33 tests pass.
+
+Specification: https://fetch.spec.whatwg.org/#append-a-request-origin-header
+Browser documentation: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy#effect_on_the_origin_header

@@ -19,6 +19,7 @@ Do not place Railway, GitHub, payment, management-API, or wallet credentials in 
 - Append-only audit hash chain. This detects accidental or partial alteration; it is not proof against a privileged database administrator who can rewrite the whole chain.
 - Random 256-bit visitor credentials, hashed at rest. Owner sessions are independent, expire after eight hours, and are invalidated by password changes.
 - CSRF protection and same-origin browser writes; same-site secure cookies; no credentials in URLs.
+- Referrer-Policy: same-origin preserves native form Origin headers while withholding referrers from external sites. Do not use no-referrer globally: native login POSTs would carry Origin: null and fail the origin check.
 - HTML autoescaping, no remote embeds, no execution of Markdown/HTML in contributions, restrictive CSP, no inline scripts, no raw error reflection.
 - 64 KiB request limit including chunked bodies; per-client and global rates, registration caps, and participant posting/pitch quotas.
 - Rate-limit storage uses daily keyed address digests, never raw IPs; deletes old buckets. Proxy configuration can make several clients share a bucket.

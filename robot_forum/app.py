@@ -151,7 +151,9 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
             response=await rejected(request,exc)
         response.headers["Content-Security-Policy"]="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         response.headers["X-Content-Type-Options"]="nosniff"
-        response.headers["Referrer-Policy"]="no-referrer"
+        # no-referrer makes native form POSTs send Origin: null, even to this
+        # same site. Preserve same-origin login while suppressing external referrers.
+        response.headers["Referrer-Policy"]="same-origin"
         response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
         if url.scheme=="https":
             response.headers["Strict-Transport-Security"]="max-age=31536000"

@@ -93,6 +93,23 @@ class Fixture(unittest.TestCase):
         return self.client.post(f"/admin/projects/{p['id']}/decision", json={**DECISION, **changes}, headers=self.owner_headers())
 
 class PersistenceTests(Fixture):
+    def test_native_login_preserves_origin_and_requires_csrf(self):
+        page = self.client.get("/admin")
+        # Fetch's Origin-header algorithm sends null for native POST forms under
+        # no-referrer. The document must preserve its own origin before submit.
+        self.assertEqual(page.headers["Referrer-Policy"], "same-origin")
+        csrf = re.search('name="csrf" value="([^"]+)"', page.text).group(1)
+        body = {"password":PASSWORD, "csrf":csrf}
+        for origin in ("null", "https://attacker.example"):
+            r = self.client.post("/admin/login", data=body, headers={"Origin":origin})
+            self.assertEqual(r.status_code, 403)
+        r = self.client.post("/admin/login", data={**body, "csrf":"wrong"}, headers={"Origin":"https://testserver"})
+        self.assertEqual(r.status_code, 403)
+        r = self.client.post("/admin/login", data=body, headers={"Origin":"https://testserver"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        self.assertEqual(r.headers["location"], "/admin")
+        self.assertEqual(self.client.get("/admin/status").status_code, 200)
+
     def test_maintenance_export_separates_private_state_and_preserves_tombstone(self):
         from maintenance import export, verify
         visitor = self.register()
