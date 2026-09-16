@@ -192,13 +192,14 @@ class Residents:
                 return "cycle_error:"+type(exc).__name__
 
     async def loop(self):
-        elapsed=0
+        elapsed=None
         while True:
             self.last_tick=now()
             with self.db.read() as c:
                 interval=max(30,min(86400,int(setting(c,"scheduler_interval_seconds","180"))))
-            if elapsed>=interval:
+            if elapsed is None or elapsed>=interval:
                 self.last_result=await self.cycle()
+                print("AQUARIUM_RESIDENT_CYCLE " + self.last_result, flush=True)
                 elapsed=0
             await asyncio.sleep(1)
             elapsed+=1

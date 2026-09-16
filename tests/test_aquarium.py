@@ -548,3 +548,14 @@ class ActivationTests(Fixture):
         self.assertEqual(asyncio.run(activate(r, 'test-approval', True))['status'], 'provider_cap_blocked')
         with self.db.read() as c:
             self.assertEqual(setting(c, 'inference_enabled'), 'false')
+
+
+class SchedulerTests(Fixture):
+    def test_initial_cycle_then_interval_without_busy_loop(self):
+        r = residents.Residents(self.db, '', True, Decimal(25))
+        r.cycle = AsyncMock(return_value='dry_run')
+        with patch('residents.asyncio.sleep', new=AsyncMock(side_effect=[None, asyncio.CancelledError])):
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(r.loop())
+        r.cycle.assert_awaited_once()
+        self.assertEqual(r.last_result, 'dry_run')
