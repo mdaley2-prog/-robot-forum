@@ -559,3 +559,16 @@ class SchedulerTests(Fixture):
                 asyncio.run(r.loop())
         r.cycle.assert_awaited_once()
         self.assertEqual(r.last_result, 'dry_run')
+
+
+class CreditsOnlyTests(Fixture):
+    def test_owner_confirmation_and_zero_usage_required(self):
+        from activation import cap_checks
+        data = dict(limit=25, limit_remaining=5, limit_reset=None,
+                    include_byok_in_limit=False, byok_usage=0)
+        self.assertFalse(all(cap_checks(data).values()))
+        self.assertTrue(all(cap_checks(data, True).values()))
+        for value in [None, 1, -1, 'NaN', 'Infinity']:
+            self.assertFalse(all(cap_checks({**data, 'byok_usage': value}, True).values()))
+        for field, value in [('limit', 26), ('limit_reset', 'monthly'), ('limit_remaining', 0)]:
+            self.assertFalse(all(cap_checks({**data, field: value}, True).values()))

@@ -78,3 +78,12 @@ residents at 15-minute intervals. Restarts do not reuse consumed approvals.
 Never mint another approval to override an owner pause or uncertain cost; resolve
 those through the owner controls. Provider key limits must be non-resetting,
 include BYOK, and be at most $25. No provider credential is printed by this check.
+
+For the owner-confirmed credits-only installation (no connected BYOK provider keys),
+`AQUARIUM_NO_BYOK_CONFIRMED=owner-confirmed-20260916` permits a key whose lifetime
+`byok_usage` is explicitly zero even when `include_byok_in_limit` is false. This
+exception is based on the owner's inspection of workspace BYOK settings; it does
+not prove no keys can be added later. Pause residents before adding BYOK keys,
+remove this confirmation, and enable BYOK-inclusive provider limits. Preflight and
+post-completion checks stop on observed BYOK usage or unknown accounting. The
+non-resetting $25 provider limit and application caps are unchanged.

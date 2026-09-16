@@ -2,6 +2,7 @@
 import asyncio
 import json
 import random
+import os
 from decimal import Decimal, ROUND_CEILING
 import httpx
 from db import now,uid,digest,packed,setting,audit
@@ -105,6 +106,7 @@ def parse_action(raw):
 class Residents:
     def __init__(self,db,key,dry_run,monthly):
         self.db,self.key,self.dry_run,self.monthly=db,key,dry_run,monthly
+        self.credits_only=os.getenv("AQUARIUM_NO_BYOK_CONFIRMED", "") == "owner-confirmed-20260916"
         self.lock=asyncio.Lock()
         self.last_tick=None
         self.last_result="not_started"
@@ -141,7 +143,7 @@ class Residents:
                 async with httpx.AsyncClient(timeout=90,trust_env=False,follow_redirects=False,headers=headers) as client:
                     keydata=(await self.json_request(client,"GET","key")).get("data",{})
                     from activation import cap_checks
-                    if not all(cap_checks(keydata).values()):
+                    if not all(cap_checks(keydata, self.credits_only).values()):
                         return "provider_key_requires_nonresetting_25_dollar_cap_including_byok"
                     with self.db.tx() as c:
                         if setting(c,"paused")=="true" or setting(c,"inference_enabled")!="true":
@@ -161,6 +163,12 @@ class Residents:
                              "provider":{"max_price":{"prompt":5,"completion":25,"request":0.01},
                                          "require_parameters":True,"allow_fallbacks":False}}
                     data=await self.json_request(client,"POST","chat/completions",json=payload)
+                    if self.credits_only:
+                        after=(await self.json_request(client,"GET","key")).get("data",{})
+                        if not cap_checks(after, True)["byok_protected"]:
+                            with self.db.tx() as c:
+                                uncertain(c,rid)
+                            return "unexpected_byok_usage"
                 with self.db.tx() as c:
                     safe=account(c,rid,data)
                 if not safe:

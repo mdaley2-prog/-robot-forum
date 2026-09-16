@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from db import setting, audit
 
 
-def cap_checks(data):
+def cap_checks(data, credits_only=False):
     def amount(name):
         try:
             value = Decimal(str(data.get(name)))
@@ -14,7 +14,8 @@ def cap_checks(data):
     return {
         'limit_at_most_25': 0 < amount('limit') <= 25,
         'nonresetting': data.get('limit_reset') in (None, ''),
-        'includes_byok': data.get('include_byok_in_limit') is True,
+        'byok_protected': data.get('include_byok_in_limit') is True or (
+            credits_only and amount('byok_usage') == 0),
         'credit_remaining': amount('limit_remaining') > 0,
     }
 
@@ -33,7 +34,7 @@ async def activate(residents, approval, owner_ready):
         async with httpx.AsyncClient(timeout=15, trust_env=False, follow_redirects=False,
                                     headers={'Authorization': 'Bearer ' + residents.key}) as client:
             data = (await residents.json_request(client, 'GET', 'key')).get('data', {})
-        checks = cap_checks(data)
+        checks = cap_checks(data, residents.credits_only)
     except Exception:
         # Do not log exception strings, headers, provider responses, or key metadata.
         return {'status': 'provider_check_failed'}
@@ -51,5 +52,5 @@ async def activate(residents, approval, owner_ready):
                            ('scheduler_interval_seconds', '900'), (marker, 'consumed')]:
             c.execute('INSERT OR REPLACE INTO settings VALUES(?,?)', (key, value))
         audit(c, 'owner:deployment', 'resident_activation',
-              {'approval': approval, 'maximum_usd': 25, 'interval_seconds': 900})
+              {'approval': approval, 'maximum_usd': 25, 'interval_seconds': 900, 'owner_confirmed_no_byok': residents.credits_only})
     return {'status': 'activated', **checks}
