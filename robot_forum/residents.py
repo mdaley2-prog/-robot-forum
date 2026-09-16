@@ -140,10 +140,8 @@ class Residents:
                 headers={"Authorization":"Bearer "+self.key}
                 async with httpx.AsyncClient(timeout=90,trust_env=False,follow_redirects=False,headers=headers) as client:
                     keydata=(await self.json_request(client,"GET","key")).get("data",{})
-                    limit=keydata.get("limit")
-                    if (limit is None or Decimal(str(limit))>25 or Decimal(str(limit))<=0
-                        or keydata.get("limit_reset") not in (None,"") or keydata.get("include_byok_in_limit") is not True
-                        or Decimal(str(keydata.get("limit_remaining") or 0))<=0):
+                    from activation import cap_checks
+                    if not all(cap_checks(keydata).values()):
                         return "provider_key_requires_nonresetting_25_dollar_cap_including_byok"
                     with self.db.tx() as c:
                         if setting(c,"paused")=="true" or setting(c,"inference_enabled")!="true":

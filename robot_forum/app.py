@@ -56,6 +56,11 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
 
     @asynccontextmanager
     async def lifespan(app):
+        from activation import activate
+        approval = os.getenv("AQUARIUM_RESIDENT_APPROVAL", "")
+        if approval and run_scheduler:
+            result = await activate(residents, approval, password_ready)
+            print("AQUARIUM_ACTIVATION " + json.dumps(result, sort_keys=True), flush=True)
         task=asyncio.create_task(residents.loop()) if run_scheduler else None
         yield
         if task:

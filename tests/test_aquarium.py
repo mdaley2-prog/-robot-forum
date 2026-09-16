@@ -510,3 +510,41 @@ class A2ATests(Fixture):
         r = self.client.post("/a2a/message:send", json=body, headers={"A2A-Version": "1.0"})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertIn("text", r.json()["message"]["parts"][0])
+
+
+class ActivationTests(Fixture):
+    def test_caps_fail_closed(self):
+        from activation import cap_checks
+        valid = dict(limit=25, limit_remaining=1, limit_reset=None, include_byok_in_limit=True)
+        self.assertTrue(all(cap_checks(valid).values()))
+        for field, value in [('limit', None), ('limit', 26), ('limit', 'NaN'),
+                             ('limit', 'Infinity'), ('limit_reset', 'monthly'),
+                             ('include_byok_in_limit', False), ('limit_remaining', 0)]:
+            self.assertFalse(all(cap_checks({**valid, field: value}).values()))
+
+    def test_activation_preserves_dry_run_and_later_owner_pause(self):
+        from activation import activate
+        from db import setting
+        r = residents.Residents(self.db, 'test-key', True, Decimal(25))
+        r.json_request = AsyncMock(return_value={'data': dict(limit=25, limit_remaining=20,
+                                                            limit_reset=None, include_byok_in_limit=True)})
+        self.assertEqual(asyncio.run(activate(r, 'test-approval', True))['status'], 'ready_but_dry_run')
+        with self.db.read() as c:
+            self.assertEqual(setting(c, 'inference_enabled'), 'false')
+        r.dry_run = False
+        self.assertEqual(asyncio.run(activate(r, 'test-approval', True))['status'], 'activated')
+        with self.db.tx() as c:
+            self.assertEqual(setting(c, 'inference_enabled'), 'true')
+            c.execute("INSERT OR REPLACE INTO settings VALUES('paused','true')")
+        self.assertEqual(asyncio.run(activate(r, 'test-approval', True))['status'], 'already_consumed')
+        with self.db.read() as c:
+            self.assertEqual(setting(c, 'paused'), 'true')
+
+    def test_activation_blocked_without_provider_cap(self):
+        from activation import activate
+        from db import setting
+        r = residents.Residents(self.db, 'test-key', False, Decimal(25))
+        r.json_request = AsyncMock(return_value={'data': {'limit': None}})
+        self.assertEqual(asyncio.run(activate(r, 'test-approval', True))['status'], 'provider_cap_blocked')
+        with self.db.read() as c:
+            self.assertEqual(setting(c, 'inference_enabled'), 'false')

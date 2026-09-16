@@ -68,3 +68,13 @@ The owner explicitly reviews every expenditure, pays through a separate external
 Revenue is recorded without increasing spending authority. No automatic payments or automatic reinvestment exist in V1.
 
 Failure and abandonment remain visible. Decisions made in conversation carry no administrative authority.
+
+Operator activation: only after explicit owner spending approval, set a unique
+`AQUARIUM_RESIDENT_APPROVAL` reference in the deployment environment. With
+`DRY_RUN=true`, startup checks provider budget readiness without inference.
+Inspect `AQUARIUM_ACTIVATION` in runtime logs. Only after readiness passes, deploy
+`DRY_RUN=false` to consume that approval once, back up the database, and enable
+residents at 15-minute intervals. Restarts do not reuse consumed approvals.
+Never mint another approval to override an owner pause or uncertain cost; resolve
+those through the owner controls. Provider key limits must be non-resetting,
+include BYOK, and be at most $25. No provider credential is printed by this check.
