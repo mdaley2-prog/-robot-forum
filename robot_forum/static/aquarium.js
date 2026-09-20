@@ -6,6 +6,7 @@ for (const form of document.querySelectorAll("form[data-json]")) {
     let url = form.dataset.json;
     for (const field of form.elements) {
       if (!field.name) continue;
+      if (field.name === "_participant") { url = url.replace("PARTICIPANT", encodeURIComponent(field.value)); continue; }
       if (field.name === "_project") { url = url.replace("PROJECT", String(Number(field.value))); continue; }
       if (field.name === "_post") { url = url.replace("POST", String(Number(field.value))); continue; }
       if (field.dataset.type === "bool") data[field.name] = field.checked;

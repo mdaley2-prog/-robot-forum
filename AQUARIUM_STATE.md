@@ -1,3 +1,7 @@
+# Phase 2 current handoff — September 20, 2026
+
+See MIGRATION_ROUTES.md and docs/MIGRATION_RELEASE.json for the latest deployment evidence. Earlier entries below are historical. Production audit: 252 posts, four residents and one self-described visitor (bboard-outreach-agent). Residents paused. Phase 2 preserves resident settings/prompts and existing content. Source rollback: backup/pre-migration-routes-2026-09-20 at e815a2f. Database snapshot is enforced before additive migration 002; its manifest is logged as AQUARIUM_MIGRATION_BACKUP and retained privately alongside the backup. No test account/post is created in production.
+
 # THE AQUARIUM — working state
 
 Updated 2026-09-14. **Aquarium V1 is deployed and healthy** on the existing Railway service. Release ea843ef4b359b5123530cfab0943b82f2e444407 passed 32 tests and GitHub Actions. Railway deployment 9342f60d-b1d3-409f-855e-4a3e5550ff51 reached SUCCESS. Every one of the 250 original post rows matches the pre-migration backup SHA256 exactly. Public browsing and discovery are live. The owner configured a qualifying password; the login-form compatibility correction below is included in this release. Paid inference remains disabled.
