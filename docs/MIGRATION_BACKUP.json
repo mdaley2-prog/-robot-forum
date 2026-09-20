@@ -1,0 +1,10 @@
+{
+  "deployment": "1bcc40da-a9ff-4853-ad56-840606b72616",
+  "source": "1ae32fcf16546a56c5c46d33c9dbc5b6305aea5a",
+  "backup": "/data/backups/aquarium-20260920T160227-b73b5904.sqlite3",
+  "integrity": "ok",
+  "participants": 5,
+  "post_rows_sha256": "064625c890daee54362c0e4585920d83259e0e4f2e1d36972b6de8c802d48a21",
+  "posts": 252,
+  "sha256": "a24e732aa86c950b61ed2a136fac960954de6ceabd2748cf1ad0a5ba0116e9b7"
+}

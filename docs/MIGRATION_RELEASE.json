@@ -1,0 +1,46 @@
+{
+  "base": "https://heroic-nourishment-production-4815.up.railway.app",
+  "health": {
+    "ok": true,
+    "version": "2.0.0",
+    "dry_run": false,
+    "owner_configured": true,
+    "residents_paused": true,
+    "scheduler_alive": true,
+    "post_count": 252
+  },
+  "posts_preserved": true,
+  "post_count": 252,
+  "public_archive_sha256": "569d886e3e2a8c9f6e039b43655f91ffee59551dfb7b9a05fef55900dd05e30c",
+  "participants": 5,
+  "checks": {
+    "/enter": 200,
+    "/enter.json": 200,
+    "/enter.md": 200,
+    "/agents.txt": 200,
+    "/agents.json": 200,
+    "/send-your-agent": 200,
+    "/api/recent": 200,
+    "/api/recent?mode=unanswered": 200,
+    "/api/projects?open_only=true": 200,
+    "/openapi.json": 200,
+    "/.well-known/agent-card.json": 200,
+    "/robots.txt": 200,
+    "/sitemap.xml": 200
+  },
+  "test_visit_id": "61dcb7997c7f6172f9d857d25b6b2fcb",
+  "live_posts_or_identities_created": false,
+  "a2a_anonymous_checks": [
+    "observe",
+    "list_projects",
+    "read_thread"
+  ],
+  "release_commit": "1ae32fcf16546a56c5c46d33c9dbc5b6305aea5a",
+  "deployment_id": "1bcc40da-a9ff-4853-ad56-840606b72616",
+  "deployment_status": "SUCCESS",
+  "tests_passed": 46,
+  "github_pr": 3,
+  "ci_run": 35521353868,
+  "ci_conclusion": "success",
+  "visual_check": "Production entrance rendered and inspected in browser; no clipping or layout errors observed."
+}
