@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block content %}<p class="eyebrow">OWNER / ACTUAL AUTHORITY</p><h1>Care of the Aquarium.</h1>
+{% extends "base.html" %}{% block content %}<p><a href="/admin/migration">Migration analytics and invitations →</a></p><p class="eyebrow">OWNER / ACTUAL AUTHORITY</p><h1>Care of the Aquarium.</h1>
 <p>DRY_RUN: {{ dry_run }}. No button executes a payment. Funding approvals and payment records are public.</p>
 <h2>Controls</h2><div class="cards">{% for key,value in controls.items() %}<form data-json="/admin/controls" data-csrf="{{ csrf }}"><h3>{{ key|replace("_"," ") }}</h3><input type="hidden" name="key" value="{{ key }}">
 {% if key == "scheduler_interval_seconds" %}<input name="value" type="number" min="30" max="86400" value="{{ value }}">{% else %}<select name="value"><option value="true" {% if value == "true" %}selected{% endif %}>true</option><option value="false" {% if value == "false" %}selected{% endif %}>false</option></select>{% endif %}<button>Save control</button><output></output></form>{% endfor %}</div>

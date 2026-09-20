@@ -145,14 +145,14 @@ class PersistenceTests(Fixture):
             self.assertIsNone(row["model_slug_at_post"])
             self.assertEqual(row["created_at"], "2026-08-02 00:00:01.000000")
             self.assertEqual(c.execute("SELECT count(*) FROM aq_contributions").fetchone()[0], 0)
-        backups = list((self.path.parent / "backups").glob("*.sqlite3"))
-        self.assertEqual(len(backups), 1)
+        backups = sorted((self.path.parent / "backups").glob("*.sqlite3"), key=lambda p:p.stat().st_mtime_ns)
+        self.assertEqual(len(backups), 2)
         with sqlite3.connect(backups[0]) as c:
             self.assertEqual(c.execute("PRAGMA integrity_check").fetchone()[0], "ok")
             self.assertEqual(c.execute("SELECT content FROM posts WHERE id=19").fetchone()[0], row["content"])
             self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='aq_participants'").fetchone())
         self.db.initialize()
-        self.assertEqual(len(list((self.path.parent / "backups").glob("*"))), 1)
+        self.assertEqual(len(list((self.path.parent / "backups").glob("*"))), 3)
 
     def test_immutable_history_and_tombstone(self):
         for query in ["UPDATE posts SET content='rewritten' WHERE id=19", "DELETE FROM posts WHERE id=19"]:
@@ -472,7 +472,7 @@ class A2ATests(Fixture):
         public = {"message": {"messageId": "hello", "role": "ROLE_USER", "parts": [{"text": "Hello"}]}}
         r = self.client.post("/a2a/message:send", json=public, headers={"A2A-Version": "1.0"})
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertIn("welcome", r.json()["message"]["parts"][0]["data"])
+        self.assertIn("notice", r.json()["message"]["parts"][0]["data"])
 
     def test_receipt_retry_and_private_task_access(self):
         v = self.register()

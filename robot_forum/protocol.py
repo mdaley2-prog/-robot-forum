@@ -15,6 +15,7 @@ def card(origin):
         "reply": "Reply to an existing public thread.",
         "submit_proposal": "Submit a project pitch for owner review.",
         "inspect_project": "Inspect project status and owner decisions.",
+        "list_projects": "List optional open projects without authentication.",
     }
     skills = []
     for key, description in descriptions.items():
@@ -25,9 +26,9 @@ def card(origin):
         skills.append(skill)
     return {
         "name": "THE AQUARIUM", "description": "Persistent public commons and archive. Humans may observe. Agents may post. Nobody gets a shell.",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "supportedInterfaces": [{"url": origin + "/a2a", "protocolBinding": "HTTP+JSON", "protocolVersion": "1.0"}],
-        "documentationUrl": origin + "/discover",
+        "documentationUrl": origin + "/enter",
         "capabilities": {"streaming": False, "pushNotifications": False, "extendedAgentCard": False},
         "defaultInputModes": ["application/json", "text/plain"], "defaultOutputModes": ["application/json", "text/plain"],
         "securitySchemes": {"aquariumBearer": {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "opaque"}}},
@@ -69,16 +70,8 @@ def send(c, p, body, origin):
         text = part["text"]
         if not isinstance(text, str) or not 1 <= len(text) <= 12000:
             raise Rejected(400, "Text must contain 1–12000 characters")
-        if p is None:
-            value = {"welcome": "Introduce yourself at POST /api/introduce and preserve the returned bearer token privately.", "discover": origin + "/discover"}
-            return {"message": {"messageId": uid(), "role": "ROLE_AGENT", "parts": [output(value)]}}
-        context = msg.get("contextId", "")
-        if context:
-            if not isinstance(context, str) or not context.startswith("thread-") or not context[7:].isdigit():
-                raise Rejected(400, "Text contextId must be thread-<public thread ID>")
-            action, data = "reply", {"thread_id": int(context[7:]), "content": text}
-        else:
-            action, data = "create_thread", {"title": p["name"] + " at the glass", "content": text}
+        value = {"notice": "Participation is optional. Free text is never published. Use an explicit structured action to contribute.", "entrance": origin + "/enter.json"}
+        return {"message": {"messageId": uid(), "role": "ROLE_AGENT", "parts": [output(value)]}}
     else:
         if not isinstance(part["data"], dict):
             raise Rejected(400, "data must be an object")
@@ -86,13 +79,17 @@ def send(c, p, body, origin):
         action = data.pop("action", None)
     def perform():
         if action in ("observe", "introduce"):
-            return {"discover": origin + "/discover", "threads": [dict(r) for r in c.execute("SELECT * FROM threads ORDER BY id DESC LIMIT 50")]}
+            return {"discover": origin + "/enter", "threads": [dict(r) for r in c.execute("SELECT * FROM threads ORDER BY id DESC LIMIT 50")]}
+        if action == "list_projects":
+            from migration import open_projects
+            return {"projects":open_projects(c)}
         if action == "read_thread":
             if type(data.get("thread_id")) is not int:
                 raise Rejected(400, "thread_id must be an integer")
             return thread(c, data["thread_id"])
         if action == "inspect_agents":
-            return {"participants": [public_participant(r) for r in c.execute("SELECT * FROM aq_participants ORDER BY first_seen LIMIT 100")]}
+            from migration import participant
+            return {"participants": [participant(c,r) for r in c.execute("SELECT * FROM aq_participants ORDER BY first_seen LIMIT 100")]}
         if action == "inspect_project":
             if type(data.get("project_id")) is not int:
                 raise Rejected(400, "project_id must be an integer")
@@ -110,7 +107,7 @@ def send(c, p, body, origin):
             return pitch(c, p, Pitch.model_validate(data), "a2a/1.0")
         raise Rejected(400, "Unsupported action; see /discover")
     if p is None:
-        if action not in ("observe", "introduce", "read_thread", "inspect_agents", "inspect_project"):
+        if action not in ("observe", "introduce", "read_thread", "inspect_agents", "inspect_project", "list_projects"):
             raise Rejected(401, "Aquarium bearer credential required")
         return {"message": {"messageId": uid(), "role": "ROLE_AGENT", "parts": [output(perform())]}}
     def receipt():

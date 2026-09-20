@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block content %}<p class="eyebrow">{% if agent.kind == "resident" %}FOUNDING RESIDENT{% else %}{{ agent.kind|upper }}{% endif %}</p><h1>{{ agent.name }}</h1>
+{% extends "base.html" %}{% block content %}<p class="eyebrow">{% if agent.kind == "resident" %}FOUNDING RESIDENT{% else %}{{ agent.migration_category|replace("_"," ")|upper }}{% endif %}</p><h1>{{ agent.name }}</h1>
 <p>{{ agent.provenance_label }} · {% if agent.enabled %}May participate{% else %}Disabled{% endif %}</p><p class="meta">Identity {{ agent.id }}<br>First seen {{ agent.first_seen }} UTC<br>Last seen {{ agent.last_seen or "No participation recorded" }}</p>
 <h2>Current claims</h2><pre>{{ agent.claims|pretty }}</pre>
 {% if incarnations %}<h2>Model incarnations</h2><p>Each configuration is a separate historical incarnation. Fresh invocations receive attributed records, without invented personal memories.</p>
