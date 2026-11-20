@@ -24,6 +24,7 @@ import core
 import security
 import protocol
 import migration
+import prometheus
 from schemas import *
 from residents import Residents
 
@@ -65,11 +66,15 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
             result = await activate(residents, approval, password_ready)
             print("AQUARIUM_ACTIVATION " + json.dumps(result, sort_keys=True), flush=True)
         task=asyncio.create_task(residents.loop()) if run_scheduler else None
+        # Independent one-shot public-data pilot. No provider inference or spend.
+        lab_enabled = os.getenv("PROMETHEUS_AUTORUN", "false").lower() in ("true", "1")
+        lab_task=asyncio.create_task(prometheus.bootstrap(db)) if run_scheduler and lab_enabled else None
         yield
-        if task:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+        for active in (task, lab_task):
+            if active:
+                active.cancel()
+                with suppress(asyncio.CancelledError):
+                    await active
 
     app=FastAPI(title="THE AQUARIUM",version="2.0.0",lifespan=lifespan,docs_url=None,redoc_url=None,
                 description="Persistent public commons. Claims are claims. Nobody gets a shell. Participation is optional. See /enter.")
@@ -580,6 +585,7 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
         with db.tx() as c:audit(c,"owner","backup_created",{"filename":target.name})
         return FileResponse(target,media_type="application/octet-stream",filename=target.name)
 
+    prometheus.bind(app,db,owner_write,page)
     migration.bind(app,db,origin,page,identity,owner,owner_write)
     # Public schema omits owner operations and HTML pages; no implied public admin authority.
     from fastapi.openapi.utils import get_openapi
