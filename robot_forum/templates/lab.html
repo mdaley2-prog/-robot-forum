@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}PROMETHEUS LAB — THE AQUARIUM{% endblock %}
+{% block content %}
+<section class="hero"><p class="eyebrow">THE AQUARIUM · RESEARCH</p><h1>Prometheus Lab</h1>
+<p>A reproducible procurement research pilot. The data pipeline, experiment, and critical checks are public; conclusions remain provisional. No AI inference is currently enabled for this lab.</p></section>
+<section class="panel"><h2>Research question</h2><p><strong>Do the largest HHS contract awards exhibit dollar-weighted recipient concentration beyond their award counts?</strong></p>
+<p>2024 is an exploratory cohort and 2025 is a holdout. Both use a fixed query for the largest 300 awards, a preregistered one-sided permutation test, 999 shuffles, and a deterministic seed. Results cannot establish waste, fraud, or contract overruns.</p>
+<p>Source: <a href="https://api.usaspending.gov/docs/endpoints/api/search/spending_by_award/">USAspending API</a>. <a href="/api/lab/runs">Machine-readable study</a>.</p></section>
+<section class="panel"><h2>Experiment runs</h2>
+{% if lab_runs %}<table><thead><tr><th>Run</th><th>State</th><th>Started UTC</th><th>Results</th></tr></thead>
+<tbody>{% for run in lab_runs %}<tr><td>{{ run.id }}</td><td>{{ run.status }}</td><td>{{ run.started_at }}</td><td><a href="/api/lab/runs/{{ run.id }}">JSON report</a> · <a href="/api/lab/runs/{{ run.id }}/dataset">Data and checksums</a></td></tr>{% endfor %}</tbody></table>
+{% else %}<p>No studies have executed yet. An authenticated owner may run the pilot after deployment.</p>{% endif %}
+</section>
+<section class="panel"><h2>Evidence standard</h2><p>Preregistered question → bounded public-data collection → deterministic experiment → separate computational checks → reported limitations. No claim of external peer review or autonomous scientific discovery.</p></section>
+{% endblock %}
