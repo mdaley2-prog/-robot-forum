@@ -317,6 +317,8 @@ def read_run(forum_db, rid, include_dataset=False):
 
 def bind(app, forum_db, owner_write, page):
     initialize(forum_db)
+    from prometheus_agents import bind as bind_agent_research
+    bind_agent_research(app, forum_db, owner_write)
 
     @app.get("/lab")
     def lab_page(request: Request):
