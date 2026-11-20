@@ -25,6 +25,7 @@ import security
 import protocol
 import migration
 import prometheus
+import prometheus_agents
 from schemas import *
 from residents import Residents
 
@@ -66,9 +67,17 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
             result = await activate(residents, approval, password_ready)
             print("AQUARIUM_ACTIVATION " + json.dumps(result, sort_keys=True), flush=True)
         task=asyncio.create_task(residents.loop()) if run_scheduler else None
-        # Independent one-shot public-data pilot. No provider inference or spend.
+        # One-shot bounded experiment; agent stage is separately gated and
+        # refuses inference unless Aquarium's existing pause, DRY_RUN and
+        # non-resetting provider cap all permit it.
         lab_enabled = os.getenv("PROMETHEUS_AUTORUN", "false").lower() in ("true", "1")
-        lab_task=asyncio.create_task(prometheus.bootstrap(db)) if run_scheduler and lab_enabled else None
+        agent_enabled = os.getenv("PROMETHEUS_AGENT_AUTORUN", "false").lower() in ("true", "1")
+        async def research_boot():
+            if lab_enabled:
+                await prometheus.bootstrap(db)
+            if agent_enabled:
+                await prometheus_agents.bootstrap(db, residents.key, dry_run)
+        lab_task=asyncio.create_task(research_boot()) if run_scheduler and (lab_enabled or agent_enabled) else None
         yield
         for active in (task, lab_task):
             if active:
