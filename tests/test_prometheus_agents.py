@@ -85,6 +85,20 @@ class AgentChallengeTests(unittest.TestCase):
             c.execute("INSERT OR REPLACE INTO settings VALUES('paused','true')")
         self.assertEqual(a.check_budget(self.db), "aquarium_inference_paused")
 
+    def test_environment_run_id_is_validated_without_creating_a_round(self):
+        import os
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"PROMETHEUS_AGENT_RUN_ID": "invalid!id"}):
+            asyncio.run(a.bootstrap(self.db, "test-key", True))
+        self.assertEqual(a.list_rounds(self.db), [])
+        with patch.dict(os.environ, {"PROMETHEUS_AGENT_RUN_ID": "new-pilot-safe-01"}):
+            asyncio.run(a.bootstrap(self.db, "test-key", True))
+        self.assertEqual(a.public_round(self.db, "new-pilot-safe-01")["status"], "blocked")
+        # An existing run is never retried by automatic startup.
+        with patch.dict(os.environ, {"PROMETHEUS_AGENT_RUN_ID": "new-pilot-safe-01"}):
+            asyncio.run(a.bootstrap(self.db, "test-key", True))
+        self.assertEqual(len(a.list_rounds(self.db)), 1)
+
     def test_rounds_idempotent_and_dry_run_blocks_calls(self):
         rid = "role-test-2026"
         self.assertTrue(a.start(self.db,rid))

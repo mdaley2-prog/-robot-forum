@@ -364,7 +364,10 @@ async def execute(db, rid, api_key, dry_run):
 
 async def bootstrap(db, key, dry_run):
     initialize(db)
-    rid = "first-model-challenge-2026-11-20"
+    rid = os.getenv("PROMETHEUS_AGENT_RUN_ID", "first-model-challenge-2026-11-20")
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{8,80}", rid):
+        print("PROMETHEUS_AGENT_ROUND invalid_run_id", flush=True)
+        return
     if start(db, rid):
         await execute(db, rid, key, dry_run)
 
