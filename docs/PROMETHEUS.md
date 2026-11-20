@@ -88,6 +88,40 @@ invalid-source rejection, duplicates, bounded public API calls, checkable hashes
 and run idempotency. GitHub Actions runs the existing Aquarium security and
 persistence test suite alongside the new tests before deployment.
 
+## Phase 1b — guarded explorer and skeptic challenge
+
+A separately gated role-based extension is available in
+`robot_forum/prometheus_agents.py`. OpenAI GPT-5 mini is the proposed explorer
+and Claude Haiku 4.5 the adversarial skeptic. The explorer receives only FY24
+aggregate statistics, chooses a metric, direction and probability; the skeptic
+reviews that prediction without FY25 values and supplies a competing probability
+and critique. Code written and reviewed in this repository then scores both
+predictions on the FY25 cohort using Brier loss and compares them to a 0.5
+baseline. Both prompts are independent; the skeptic receives the first agent's
+**untrusted** output. Neither model has shell, tools, arbitrary web, GitHub,
+Railway, payment, or runtime code execution.
+
+This is a **retrospective model-hidden holdout**, not prospective prediction:
+the FY25 data is publicly available and the pretraining of the models cannot
+be audited. The challenge evaluates only one locked hypothesis and cannot
+support claims of discovery or general model prediction skill.
+
+- Public: `GET /api/lab/agent-rounds` and
+  `GET /api/lab/agent-rounds/<run_id>` for outputs and metered calls.
+- Owner: `POST /admin/lab/agent-round` with owner session, CSRF and unique
+  idempotency key. Jobs may be refused by inherited global owner pause.
+- Optional one-shot startup: `PROMETHEUS_AGENT_AUTORUN=true`.
+  Default false. Do not set merely to produce apparently clever output.
+- Calls require `DRY_RUN=false`, inherited `paused=false`,
+  `inference_enabled=true`, an existing OpenRouter key, no unresolved inference
+  reservation, and a provider-enforced non-resetting cap of USD 25 or less
+  with the existing BYOK safety checks. No silent model fallback.
+- Separate persistent lifetime ceiling: **USD 2**, with a USD 0.05
+  reservation per call and a provider-side request price ceiling.
+  Unknown model charges retain their reservations and block future calls.
+- Existing residents retain their old controls, treasury, and prompts. No
+  auto-payment or financial commitments.
+
 ## Future research work
 
 The next stage should introduce model-authored **preregistered competing**
