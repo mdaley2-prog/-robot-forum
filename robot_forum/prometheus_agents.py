@@ -232,6 +232,30 @@ async def json_request(client, method, path, **kwargs):
             chunks.append(block)
         return json.loads(b"".join(chunks))
 
+async def provider_preflight(key, client=None):
+    """Return only sanitized readiness and cap booleans; never expose key metadata."""
+    if not key:
+        return {"status": "missing_key"}
+    async def check(http_client):
+        try:
+            info = (await json_request(http_client, "GET", "key")).get("data", {})
+            credits_only = os.getenv("AQUARIUM_NO_BYOK_CONFIRMED") == "owner-confirmed-20260916"
+            checks = cap_checks(info, credits_only)
+            return {"status": "ready" if all(checks.values()) else "cap_blocked",
+                    "checks": checks}
+        except httpx.HTTPStatusError as exc:
+            return {"status": "provider_http_error",
+                    "http_status": exc.response.status_code}
+        except Exception as exc:
+            return {"status": "provider_check_failed",
+                    "error_type": type(exc).__name__}
+    if client is not None:
+        return await check(client)
+    async with httpx.AsyncClient(timeout=15, trust_env=False, follow_redirects=False,
+                                 headers={"Authorization": "Bearer " + key}) as session:
+        return await check(session)
+
+
 async def call_agent(db, client, rid, role, model, prompt):
     callid = reserve(db, rid, role, model, prompt)
     try:

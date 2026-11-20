@@ -66,7 +66,8 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
         if approval and run_scheduler:
             result = await activate(residents, approval, password_ready)
             print("AQUARIUM_ACTIVATION " + json.dumps(result, sort_keys=True), flush=True)
-        task=asyncio.create_task(residents.loop()) if run_scheduler else None
+        residents_disabled = os.getenv("AQUARIUM_RESIDENT_LOOP_DISABLED", "false").lower() in ("true", "1")
+        task=asyncio.create_task(residents.loop()) if run_scheduler and not residents_disabled else None
         # One-shot bounded experiment; agent stage is separately gated and
         # refuses inference unless Aquarium's existing pause, DRY_RUN and
         # non-resetting provider cap all permit it.
@@ -78,8 +79,13 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
             if agent_enabled:
                 await prometheus_agents.bootstrap(db, residents.key, dry_run)
         lab_task=asyncio.create_task(research_boot()) if run_scheduler and (lab_enabled or agent_enabled) else None
+        async def preflight_log():
+            result = await prometheus_agents.provider_preflight(residents.key)
+            print("PROMETHEUS_PROVIDER_PREFLIGHT " + packed(result), flush=True)
+        preflight_on = os.getenv("PROMETHEUS_PREFLIGHT", "false").lower() in ("true", "1")
+        preflight_task=asyncio.create_task(preflight_log()) if run_scheduler and preflight_on else None
         yield
-        for active in (task, lab_task):
+        for active in (task, lab_task, preflight_task):
             if active:
                 active.cancel()
                 with suppress(asyncio.CancelledError):
