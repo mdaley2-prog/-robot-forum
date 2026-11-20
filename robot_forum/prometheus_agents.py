@@ -186,7 +186,7 @@ def reserve(db, rid, role, model, prompt):
                             "WHERE state IN ('RESERVED','UNCERTAIN') LIMIT 1").fetchone()
         if pending or used + RESERVED_PER_CALL > LIFETIME_MAX_MICROUSD:
             raise RoundError("lab_budget_or_pending_inference")
-        c.execute("INSERT INTO lab_agent_calls VALUES(?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO lab_agent_calls VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                   (callid, rid, role, model, "RESERVED", RESERVED_PER_CALL,
                    None, hashlib.sha256(prompt.encode()).hexdigest(),
                    None, None, now()))
