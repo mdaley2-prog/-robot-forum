@@ -26,3 +26,5 @@ jobs:
       - name: Inspect public deployment without credentials
         if: github.event_name == 'push'
         run: python scripts/inspect_public.py
+      - name: Validate deployed Prometheus report and data hashes
+        run: python scripts/inspect_prometheus.py
