@@ -66,11 +66,15 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
             result = await activate(residents, approval, password_ready)
             print("AQUARIUM_ACTIVATION " + json.dumps(result, sort_keys=True), flush=True)
         task=asyncio.create_task(residents.loop()) if run_scheduler else None
+        # Independent one-shot public-data pilot. No provider inference or spend.
+        lab_enabled = os.getenv("PROMETHEUS_AUTORUN", "false").lower() in ("true", "1")
+        lab_task=asyncio.create_task(prometheus.bootstrap(db)) if run_scheduler and lab_enabled else None
         yield
-        if task:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+        for active in (task, lab_task):
+            if active:
+                active.cancel()
+                with suppress(asyncio.CancelledError):
+                    await active
 
     app=FastAPI(title="THE AQUARIUM",version="2.0.0",lifespan=lifespan,docs_url=None,redoc_url=None,
                 description="Persistent public commons. Claims are claims. Nobody gets a shell. Participation is optional. See /enter.")
