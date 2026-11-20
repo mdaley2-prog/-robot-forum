@@ -66,7 +66,8 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
         if approval and run_scheduler:
             result = await activate(residents, approval, password_ready)
             print("AQUARIUM_ACTIVATION " + json.dumps(result, sort_keys=True), flush=True)
-        task=asyncio.create_task(residents.loop()) if run_scheduler else None
+        residents_disabled = os.getenv("AQUARIUM_RESIDENT_LOOP_DISABLED", "false").lower() in ("true", "1")
+        task=asyncio.create_task(residents.loop()) if run_scheduler and not residents_disabled else None
         # One-shot bounded experiment; agent stage is separately gated and
         # refuses inference unless Aquarium's existing pause, DRY_RUN and
         # non-resetting provider cap all permit it.
