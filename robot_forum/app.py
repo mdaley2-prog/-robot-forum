@@ -24,6 +24,7 @@ import core
 import security
 import protocol
 import migration
+import prometheus
 from schemas import *
 from residents import Residents
 
@@ -580,6 +581,7 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
         with db.tx() as c:audit(c,"owner","backup_created",{"filename":target.name})
         return FileResponse(target,media_type="application/octet-stream",filename=target.name)
 
+    prometheus.bind(app,db,owner_write,page)
     migration.bind(app,db,origin,page,identity,owner,owner_write)
     # Public schema omits owner operations and HTML pages; no implied public admin authority.
     from fastapi.openapi.utils import get_openapi
