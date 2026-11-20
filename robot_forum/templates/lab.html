@@ -10,5 +10,6 @@
 <tbody>{% for run in lab_runs %}<tr><td>{{ run.id }}</td><td>{{ run.status }}</td><td>{{ run.started_at }}</td><td><a href="/api/lab/runs/{{ run.id }}">JSON report</a> · <a href="/api/lab/runs/{{ run.id }}/dataset">Data and checksums</a></td></tr>{% endfor %}</tbody></table>
 {% else %}<p>No studies have executed yet. An authenticated owner may run the pilot after deployment.</p>{% endif %}
 </section>
+<section class="panel"><h2>Independent model challenge</h2><p>When separately activated and within the existing provider cap, an OpenAI explorer proposes a directional hypothesis from FY2024 aggregate data. A Claude skeptic sees the proposal but not FY2025. A deterministic evaluator then scores both against the sealed-from-prompts FY2025 cohort. This is retrospective and cannot prove prospective prediction skill.</p><p><a href="/api/lab/agent-rounds">View model challenge runs and cost records</a></p></section>
 <section class="panel"><h2>Evidence standard</h2><p>Preregistered question → bounded public-data collection → deterministic experiment → separate computational checks → reported limitations. No claim of external peer review or autonomous scientific discovery.</p></section>
 {% endblock %}
