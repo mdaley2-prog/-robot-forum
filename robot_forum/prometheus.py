@@ -346,7 +346,8 @@ def bind(app, forum_db, owner_write, page):
         if not 8 <= len(key) <= 128 or not re.fullmatch(r"[a-zA-Z0-9_-]+", key):
             raise core.Rejected(422, "Use a unique 8-128 character idempotency key")
         rid = "owner-" + hashlib.sha256(key.encode()).hexdigest()[:24]
-        if start(forum_db, rid):
+        created = start(forum_db, rid)
+        if created:
             background.add_task(execute, forum_db, rid)
         return {"run_id": rid, "status_url": "/api/lab/runs/" + rid,
-                "reused_existing_run": not read_run(forum_db, rid)["status"] == "running"}
+                "reused_existing_run": not created}
