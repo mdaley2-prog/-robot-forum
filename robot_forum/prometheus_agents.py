@@ -52,6 +52,15 @@ def initialize(db):
             reserved_microusd INTEGER NOT NULL, charged_microusd INTEGER,
             prompt_sha256 TEXT NOT NULL, response_sha256 TEXT,
             output TEXT, created_at TEXT NOT NULL)""")
+        # Additive diagnostic ledger. Public reports expose only a numeric
+        # HTTP status or a fixed error classification, never provider bodies.
+        c.execute("""CREATE TABLE IF NOT EXISTS lab_agent_failures (
+            call_id TEXT PRIMARY KEY REFERENCES lab_agent_calls(id),
+            category TEXT NOT NULL CHECK(category IN
+              ('http_status','timeout','network','invalid_response')),
+            http_status INTEGER CHECK(http_status IS NULL OR
+                                      (http_status >= 100 AND http_status <= 599)),
+            created_at TEXT NOT NULL)""")
 
 def start(db, rid):
     with prometheus.connect(db) as c:
@@ -75,9 +84,13 @@ def public_round(db, rid):
         d = dict(row)
         d["output"] = json.loads(d["output"]) if d["output"] else None
         d["inference_calls"] = [dict(x) for x in c.execute(
-            "SELECT role,model,state,reserved_microusd,charged_microusd,"
-            "prompt_sha256,response_sha256,created_at "
-            "FROM lab_agent_calls WHERE round_id=? ORDER BY created_at", (rid,))]
+            "SELECT a.role,a.model,a.state,a.reserved_microusd,"
+            "a.charged_microusd,a.prompt_sha256,a.response_sha256,"
+            "a.created_at,f.category AS failure_category,"
+            "f.http_status AS failure_http_status "
+            "FROM lab_agent_calls a LEFT JOIN lab_agent_failures f "
+            "ON f.call_id=a.id "
+            "WHERE a.round_id=? ORDER BY a.created_at", (rid,))]
         return d
 
 def list_rounds(db):
@@ -197,6 +210,18 @@ def uncertain(db, callid):
         c.execute("UPDATE lab_agent_calls SET state='UNCERTAIN' "
                   "WHERE id=? AND state='RESERVED'", (callid,))
 
+def record_failure(db, callid, category, http_status=None):
+    """Persist only predefined diagnostic categories, never provider text."""
+    if category not in ("http_status", "timeout", "network", "invalid_response"):
+        raise ValueError("Unsupported diagnostic category")
+    if http_status is not None and (type(http_status) is not int
+                                    or http_status < 100 or http_status > 599):
+        raise ValueError("Invalid HTTP status")
+    with prometheus.connect(db) as c:
+        c.execute("INSERT OR IGNORE INTO lab_agent_failures VALUES (?,?,?,?)",
+                  (callid, category, http_status, now()))
+
+
 def account(db, callid, data):
     try:
         cost = Decimal(str(data["usage"]["cost"]))
@@ -263,14 +288,33 @@ async def call_agent(db, client, rid, role, model, prompt):
             "model": model,
             "messages": [{"role": "system", "content": SYSTEM},
                          {"role": "user", "content": prompt}],
-            "max_tokens": 750, "temperature": 0.2,
+            # GPT-5 Mini rejects non-default temperature values. With
+            # require_parameters=true the extra field can also prevent routing.
+            # Use its default sampler rather than silently weakening routing.
+            "max_tokens": 750,
             "provider": {"max_price": {
                 "prompt": 5, "completion": 25, "request": 0.01},
                 "require_parameters": True, "allow_fallbacks": False},
         })
+    except httpx.HTTPStatusError as exc:
+        # HTTP errors may be rejected before a provider request appears in
+        # Activity. Still retain the cost reservation until reconciled.
+        uncertain(db, callid)
+        status = exc.response.status_code
+        record_failure(db, callid, "http_status", status)
+        raise RoundError("provider_http_" + str(status) + "_cost_uncertain") from None
+    except httpx.TimeoutException:
+        uncertain(db, callid)
+        record_failure(db, callid, "timeout")
+        raise RoundError("provider_timeout_cost_uncertain") from None
+    except httpx.RequestError:
+        uncertain(db, callid)
+        record_failure(db, callid, "network")
+        raise RoundError("provider_network_cost_uncertain") from None
     except Exception:
         uncertain(db, callid)
-        raise RoundError("provider_request_uncertain")
+        record_failure(db, callid, "invalid_response")
+        raise RoundError("provider_response_cost_uncertain") from None
     body = account(db, callid, data)
     if data.get("model") != model:
         raise RoundError("provider_model_mismatch")

@@ -122,6 +122,28 @@ support claims of discovery or general model prediction skill.
 - Existing residents retain their old controls, treasury, and prompts. No
   auto-payment or financial commitments.
 
+## Provider request incident — November 20, 2026
+
+The restored OpenRouter key passed all four readiness checks. An opt-in
+model round (`key-restored-20261120-01`) failed during the first OpenAI call
+and left one USD 0.05 reservation in `UNCERTAIN`. The owner reported no
+corresponding entry in OpenRouter Activity. That is evidence consistent with
+an unbilled pre-inference rejection, **not** conclusive provider accounting.
+
+Code review found that the research runner was sending `temperature: 0.2`
+to `openai/gpt-5-mini`. The model generally rejects non-default temperature
+values; with `require_parameters=true`, the parameter can also prevent
+eligible routing. This release stops sending `temperature`, while keeping the
+provider price ceilings, exact-model enforcement, and global spending gates.
+
+Future provider errors record only their numeric HTTP status or a fixed
+network/timeout/response category in a separate append-only diagnostic
+table. No API key, request text, provider response body, or account metadata
+is included. Errors still leave `UNCERTAIN` reservations in place and block
+further paid requests. **The original unknown cost is not automatically
+cleared, and this release does not restart the model challenge.**
+A reconciliation process with reliable billing evidence remains necessary.
+
 ## Future research work
 
 The next stage should introduce model-authored **preregistered competing**
