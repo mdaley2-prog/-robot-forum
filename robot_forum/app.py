@@ -66,6 +66,17 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
         if approval and run_scheduler:
             result = await activate(residents, approval, password_ready)
             print("AQUARIUM_ACTIVATION " + json.dumps(result, sort_keys=True), flush=True)
+        # One-time owner-reported zero-activity / unchanged-balance attestation
+        # for one historical failed Prometheus request only. Does not rewrite
+        # the UNCERTAIN inference or discount its lifetime reservation.
+        billing_evidence = os.getenv("PROMETHEUS_RECONCILE_OWNER_REPORT", "")
+        if billing_evidence:
+            try:
+                outcome = prometheus_agents.reconcile_owner_report(
+                    db, prometheus_agents.OWNER_RECONCILIATION_ROUND, billing_evidence)
+                print("PROMETHEUS_BILLING_RECONCILIATION " + outcome, flush=True)
+            except prometheus_agents.RoundError as exc:
+                print("PROMETHEUS_BILLING_RECONCILIATION blocked " + str(exc), flush=True)
         residents_disabled = os.getenv("AQUARIUM_RESIDENT_LOOP_DISABLED", "false").lower() in ("true", "1")
         task=asyncio.create_task(residents.loop()) if run_scheduler and not residents_disabled else None
         # One-shot bounded experiment; agent stage is separately gated and

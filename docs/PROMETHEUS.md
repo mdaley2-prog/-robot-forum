@@ -144,6 +144,37 @@ further paid requests. **The original unknown cost is not automatically
 cleared, and this release does not restart the model challenge.**
 A reconciliation process with reliable billing evidence remains necessary.
 
+## Owner-attested reconciliation — November 21, 2026
+
+For the failed `key-restored-20261120-01` explorer call, the owner reports
+**no OpenRouter Activity entry and no change in OpenRouter balance**. Neither
+piece of evidence definitively proves that a charge could not surface later.
+
+A deliberately narrow reconciliation is available via one-time deployment
+setting:
+
+```
+PROMETHEUS_RECONCILE_OWNER_REPORT=no_activity_and_unchanged_balance_2026-11-21
+```
+
+The reconciliation will act **only** on the exact prior round ID, and only
+if its sole explorer call is still `UNCERTAIN`. It writes a new, persistent,
+idempotent owner-evidence record; the original uncertain inference remains
+untouched. The entire original **$0.05 reservation stays included** in the
+lab's $2 lifetime budget, conservatively covering a charge that might surface
+later. This one record is excluded from the otherwise strict pending-cost
+block, allowing a separate new run with a unique ID. Every other uncertain
+or reserved inference remains blocked.
+
+Turn the environment variable off after confirming
+`PROMETHEUS_BILLING_RECONCILIATION owner_attested_reservation_retained`
+in production logs. Do not repeat the mechanism for an arbitrary failure,
+reset the lab database, change global owner pause, or waive provider cap checks.
+
+The saved report for the failed round includes both the unchanged
+`UNCERTAIN` entry and the `owner_attestation` evidence code. The record is
+an owner assertion, not a statement of independently verified provider billing.
+
 ## Future research work
 
 The next stage should introduce model-authored **preregistered competing**

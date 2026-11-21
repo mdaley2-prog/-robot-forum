@@ -61,6 +61,15 @@ def initialize(db):
             http_status INTEGER CHECK(http_status IS NULL OR
                                       (http_status >= 100 AND http_status <= 599)),
             created_at TEXT NOT NULL)""")
+        # A reconciliation is an explicit owner attestation, not proof of
+        # provider billing. The original UNCERTAIN call and full 5c
+        # reservation remain unchanged in the lifetime spend ledger.
+        c.execute("""CREATE TABLE IF NOT EXISTS lab_agent_reconciliations (
+            call_id TEXT PRIMARY KEY REFERENCES lab_agent_calls(id),
+            actor TEXT NOT NULL,
+            evidence_code TEXT NOT NULL,
+            reservation_retained_microusd INTEGER NOT NULL,
+            created_at TEXT NOT NULL)""")
 
 def start(db, rid):
     with prometheus.connect(db) as c:
@@ -87,9 +96,12 @@ def public_round(db, rid):
             "SELECT a.role,a.model,a.state,a.reserved_microusd,"
             "a.charged_microusd,a.prompt_sha256,a.response_sha256,"
             "a.created_at,f.category AS failure_category,"
-            "f.http_status AS failure_http_status "
+            "f.http_status AS failure_http_status,"
+            "r.evidence_code AS owner_attestation,"
+            "r.reservation_retained_microusd "
             "FROM lab_agent_calls a LEFT JOIN lab_agent_failures f "
             "ON f.call_id=a.id "
+            "LEFT JOIN lab_agent_reconciliations r ON r.call_id=a.id "
             "WHERE a.round_id=? ORDER BY a.created_at", (rid,))]
         return d
 
@@ -170,6 +182,52 @@ def score(explorer, skeptic, exploratory, heldout):
         "awards_per_year": [300, 300],
     }
 
+# A one-off resolution of the exact pre-inference failure supported by
+# owner statements: no OpenRouter Activity row and unchanged balance.
+# Do not generalize this to future uncertain calls or silently auto-clear.
+OWNER_RECONCILIATION_ROUND = "key-restored-20261120-01"
+OWNER_RECONCILIATION_EVIDENCE = "no_activity_and_unchanged_balance_2026-11-21"
+UNRESOLVED_QUERY = (
+    "SELECT 1 FROM lab_agent_calls a "
+    "WHERE a.state='RESERVED' OR "
+    "(a.state='UNCERTAIN' AND NOT EXISTS "
+    "(SELECT 1 FROM lab_agent_reconciliations r WHERE r.call_id=a.id)) "
+    "LIMIT 1"
+)
+
+
+def reconcile_owner_report(db, round_id, evidence):
+    """Keep original UNCERTAIN reservation but release a narrowly attested block.
+
+    The owner reported both no matching OpenRouter Activity row and an unchanged
+    balance. This is recorded as owner evidence, not asserted provider proof.
+    Only the historically identified call is eligible.
+    """
+    if (round_id != OWNER_RECONCILIATION_ROUND or
+            evidence != OWNER_RECONCILIATION_EVIDENCE):
+        raise RoundError("reconciliation_evidence_or_run_invalid")
+    with prometheus.connect(db) as c:
+        row = c.execute(
+            "SELECT id,state,reserved_microusd FROM lab_agent_calls "
+            "WHERE round_id=? AND role='explorer'",
+            (round_id,)).fetchone()
+        if not row or row["state"] != "UNCERTAIN":
+            raise RoundError("original_uncertain_call_not_found")
+        other = c.execute(
+            "SELECT count(*) FROM lab_agent_calls "
+            "WHERE round_id=? AND role != 'explorer'",
+            (round_id,)).fetchone()[0]
+        if other:
+            raise RoundError("unexpected_additional_calls")
+        if c.execute("SELECT 1 FROM lab_agent_reconciliations "
+                     "WHERE call_id=?", (row["id"],)).fetchone():
+            return "already_attested"
+        c.execute("INSERT INTO lab_agent_reconciliations VALUES(?,?,?,?,?)",
+                  (row["id"], "owner:deployment", evidence,
+                   row["reserved_microusd"], now()))
+        return "owner_attested_reservation_retained"
+
+
 def check_budget(forum_db):
     # Preserve the parent's global owner pause and unresolved-inference barrier.
     with forum_db.read() as c:
@@ -178,7 +236,7 @@ def check_budget(forum_db):
         if c.execute("SELECT 1 FROM aq_inference WHERE state IN ('RESERVED','UNCERTAIN') LIMIT 1").fetchone():
             return "aquarium_outstanding_inference"
     with prometheus.connect(forum_db) as c:
-        if c.execute("SELECT 1 FROM lab_agent_calls WHERE state IN ('RESERVED','UNCERTAIN') LIMIT 1").fetchone():
+        if c.execute(UNRESOLVED_QUERY).fetchone():
             return "lab_outstanding_inference"
         used = c.execute("SELECT coalesce(sum(coalesce(charged_microusd,reserved_microusd)),0) "
                          "FROM lab_agent_calls").fetchone()[0]
@@ -195,8 +253,7 @@ def reserve(db, rid, role, model, prompt):
         # Repeat the local safety checks inside the SQLite write transaction.
         used = c.execute("SELECT coalesce(sum(coalesce(charged_microusd,reserved_microusd)),0) "
                          "FROM lab_agent_calls").fetchone()[0]
-        pending = c.execute("SELECT 1 FROM lab_agent_calls "
-                            "WHERE state IN ('RESERVED','UNCERTAIN') LIMIT 1").fetchone()
+        pending = c.execute(UNRESOLVED_QUERY).fetchone()
         if pending or used + RESERVED_PER_CALL > LIFETIME_MAX_MICROUSD:
             raise RoundError("lab_budget_or_pending_inference")
         c.execute("INSERT INTO lab_agent_calls VALUES(?,?,?,?,?,?,?,?,?,?,?)",
