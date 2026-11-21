@@ -122,7 +122,9 @@ class AgentChallengeTests(unittest.TestCase):
             self.assertEqual(body["model"], a.EXPLORER_MODEL)
             # GPT-5 mini does not accept a custom temperature. Do not send it.
             self.assertNotIn("temperature", body)
-            self.assertEqual(body["max_tokens"], 750)
+            self.assertNotIn("max_tokens", body)
+            self.assertEqual(body["max_completion_tokens"], 1600)
+            self.assertEqual(body["usage"], {"include": True})
             self.assertFalse(body["provider"]["allow_fallbacks"])
             self.assertTrue(body["provider"]["require_parameters"])
             return httpx.Response(200, json={
@@ -142,6 +144,72 @@ class AgentChallengeTests(unittest.TestCase):
         self.assertEqual(recorded[0]["charged_microusd"], 4000)
         self.assertEqual(recorded[0]["state"], "ACCOUNTED")
         self.assertIsNone(a.check_budget(self.db))
+
+    def test_missing_cost_is_distinct_failure_and_never_assumed_zero(self):
+        self.enable_owner_inference()
+        rid = "missing-usage-test"
+        self.assertTrue(a.start(self.db, rid))
+        def respond(req):
+            payload = json.loads(req.content)
+            self.assertTrue(payload["usage"]["include"])
+            return httpx.Response(200, json={
+                "model":a.EXPLORER_MODEL,
+                "choices":[{"message":{"content":"some text"}}],
+                "usage":{"prompt_tokens":15,"completion_tokens":30}
+            })
+        async def run():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                return await a.call_agent(self.db, client, rid, "explorer",
+                                          a.EXPLORER_MODEL, "FY24-only")
+        with self.assertRaisesRegex(a.RoundError,"provider_usage_cost_missing_uncertain"):
+            asyncio.run(run())
+        record = a.public_round(self.db, rid)
+        self.assertEqual(record["inference_calls"][0]["state"], "UNCERTAIN")
+        self.assertIsNone(record["inference_calls"][0]["charged_microusd"])
+        self.assertEqual(record["inference_calls"][0]["failure_category"], "invalid_response")
+        self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
+
+    def test_accounted_cost_with_no_visible_text_stays_uncertain(self):
+        self.enable_owner_inference()
+        rid = "blank-output-test"
+        self.assertTrue(a.start(self.db, rid))
+        def respond(req):
+            return httpx.Response(200, json={
+                "model":a.EXPLORER_MODEL,
+                "choices":[{"message":{"content":""},"finish_reason":"length"}],
+                "usage":{"cost":0.003}
+            })
+        async def run():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                return await a.call_agent(self.db, client, rid, "explorer",
+                                          a.EXPLORER_MODEL, "FY24-only")
+        with self.assertRaisesRegex(a.RoundError,"provider_content_invalid_cost_uncertain"):
+            asyncio.run(run())
+        record = a.public_round(self.db, rid)
+        self.assertEqual(record["inference_calls"][0]["state"], "UNCERTAIN")
+        self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
+
+    def test_skeptic_keeps_claude_compatible_max_tokens(self):
+        self.enable_owner_inference()
+        rid = "claude-request-test"
+        self.assertTrue(a.start(self.db, rid))
+        def respond(req):
+            payload = json.loads(req.content)
+            self.assertEqual(payload["model"], a.SKEPTIC_MODEL)
+            self.assertEqual(payload["max_tokens"], 1200)
+            self.assertNotIn("max_completion_tokens", payload)
+            self.assertTrue(payload["usage"]["include"])
+            return httpx.Response(200, json={
+                "model":a.SKEPTIC_MODEL,
+                "choices":[{"message":{"content":
+                    '{"confidence":0.4,"critique":"Top-value selection can distort recipient concentration."}'}}],
+                "usage":{"cost":0.001}
+            })
+        async def run():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                return await a.call_agent(self.db, client, rid, "skeptic",
+                                          a.SKEPTIC_MODEL, "FY24 and untrusted proposal")
+        self.assertEqual(a.parse_skeptic(asyncio.run(run()))["confidence"], 0.4)
 
     def test_owner_billing_attestation_is_one_off_append_only_and_conservative(self):
         # Only the specifically named historical failure can be reconciled.
