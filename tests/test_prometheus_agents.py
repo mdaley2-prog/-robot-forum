@@ -120,7 +120,11 @@ class AgentChallengeTests(unittest.TestCase):
             self.assertEqual(request.url.host, "openrouter.ai")
             body = json.loads(request.content)
             self.assertEqual(body["model"], a.EXPLORER_MODEL)
+            # GPT-5 mini does not accept a custom temperature. Do not send it.
+            self.assertNotIn("temperature", body)
+            self.assertEqual(body["max_tokens"], 750)
             self.assertFalse(body["provider"]["allow_fallbacks"])
+            self.assertTrue(body["provider"]["require_parameters"])
             return httpx.Response(200, json={
                 "id": "fake-generation", "model": a.EXPLORER_MODEL,
                 "choices":[{"message":{"content":
@@ -151,8 +155,44 @@ class AgentChallengeTests(unittest.TestCase):
         with self.assertRaises(a.RoundError):
             asyncio.run(run())
         self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
-        self.assertEqual(a.public_round(self.db,rid)["inference_calls"][0]["state"],
-                         "UNCERTAIN")
+        call = a.public_round(self.db,rid)["inference_calls"][0]
+        self.assertEqual(call["state"], "UNCERTAIN")
+        self.assertEqual(call["failure_category"], "http_status")
+        self.assertEqual(call["failure_http_status"], 502)
+
+    def test_rejected_request_logs_only_http_status_not_response_body(self):
+        self.enable_owner_inference()
+        rid = "rejected-provider-diagnostic"
+        self.assertTrue(a.start(self.db, rid))
+        def respond(req):
+            return httpx.Response(400, json={"error": {
+                "message": "PRIVATE! Never include the provider message.",
+                "metadata": {"secret": "private-payload"}}})
+        async def run():
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(respond)) as client:
+                return await a.call_agent(
+                    self.db, client, rid, "explorer", a.EXPLORER_MODEL, "safe")
+        with self.assertRaisesRegex(a.RoundError, "provider_http_400_cost_uncertain"):
+            asyncio.run(run())
+        recorded = a.public_round(self.db, rid)
+        self.assertEqual(recorded["inference_calls"][0]["failure_http_status"], 400)
+        self.assertEqual(recorded["inference_calls"][0]["failure_category"], "http_status")
+        self.assertNotIn("PRIVATE", json.dumps(recorded))
+        self.assertNotIn("secret", json.dumps(recorded))
+        self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
+
+    def test_old_uncertain_record_remains_blocked_after_diagnostic_migration(self):
+        rid = "old-unknown"
+        self.assertTrue(a.start(self.db, rid))
+        with a.prometheus.connect(self.db) as c:
+            c.execute("INSERT INTO lab_agent_calls VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      ("old-call", rid, "explorer", a.EXPLORER_MODEL,
+                       "UNCERTAIN", 50000, None, "prompt-hash", None, None, a.now()))
+        a.initialize(self.db)
+        recorded = a.public_round(self.db, rid)
+        self.assertEqual(recorded["inference_calls"][0]["state"], "UNCERTAIN")
+        self.assertIsNone(recorded["inference_calls"][0]["failure_http_status"])
 
 if __name__ == "__main__":
     unittest.main()
