@@ -143,6 +143,62 @@ class AgentChallengeTests(unittest.TestCase):
         self.assertEqual(recorded[0]["state"], "ACCOUNTED")
         self.assertIsNone(a.check_budget(self.db))
 
+    def test_owner_billing_attestation_is_one_off_append_only_and_conservative(self):
+        # Only the specifically named historical failure can be reconciled.
+        self.enable_owner_inference()
+        rid = a.OWNER_RECONCILIATION_ROUND
+        self.assertTrue(a.start(self.db, rid))
+        import hashlib
+        callid = hashlib.sha256((rid + ":explorer").encode()).hexdigest()[:28]
+        with a.prometheus.connect(self.db) as c:
+            c.execute("INSERT INTO lab_agent_calls VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      (callid, rid, "explorer", a.EXPLORER_MODEL,
+                       "UNCERTAIN", 50000, None, "prompt-hash", None, None, a.now()))
+        self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
+        with self.assertRaises(a.RoundError):
+            a.reconcile_owner_report(self.db, rid, "guess")
+        with self.assertRaises(a.RoundError):
+            a.reconcile_owner_report(self.db, "another-run", a.OWNER_RECONCILIATION_EVIDENCE)
+        self.assertEqual(a.reconcile_owner_report(
+            self.db, rid, a.OWNER_RECONCILIATION_EVIDENCE),
+            "owner_attested_reservation_retained")
+        self.assertEqual(a.reconcile_owner_report(
+            self.db, rid, a.OWNER_RECONCILIATION_EVIDENCE),
+            "already_attested")
+        restored = a.public_round(self.db, rid)["inference_calls"][0]
+        self.assertEqual(restored["state"], "UNCERTAIN")
+        self.assertEqual(restored["reserved_microusd"], 50000)
+        self.assertIsNone(restored["charged_microusd"])
+        self.assertEqual(restored["owner_attestation"], a.OWNER_RECONCILIATION_EVIDENCE)
+        self.assertEqual(restored["reservation_retained_microusd"], 50000)
+        self.assertIsNone(a.check_budget(self.db))
+        with a.prometheus.connect(self.db) as c:
+            used = c.execute(
+                "SELECT SUM(COALESCE(charged_microusd,reserved_microusd)) "
+                "FROM lab_agent_calls").fetchone()[0]
+            ledger_rows = c.execute(
+                "SELECT COUNT(*) FROM lab_agent_reconciliations").fetchone()[0]
+        self.assertEqual(used, 50000)
+        self.assertEqual(ledger_rows, 1)
+
+    def test_other_unknown_charges_still_block_after_owner_attestation(self):
+        self.enable_owner_inference()
+        rid = a.OWNER_RECONCILIATION_ROUND
+        self.assertTrue(a.start(self.db, rid))
+        import hashlib
+        callid = hashlib.sha256((rid + ":explorer").encode()).hexdigest()[:28]
+        with a.prometheus.connect(self.db) as c:
+            c.execute("INSERT INTO lab_agent_calls VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      (callid, rid, "explorer", a.EXPLORER_MODEL,
+                       "UNCERTAIN", 50000, None, "prompt-hash", None, None, a.now()))
+        a.reconcile_owner_report(self.db, rid, a.OWNER_RECONCILIATION_EVIDENCE)
+        self.assertTrue(a.start(self.db, "another-unknown"))
+        with a.prometheus.connect(self.db) as c:
+            c.execute("INSERT INTO lab_agent_calls VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      ("another-call", "another-unknown", "skeptic", a.SKEPTIC_MODEL,
+                       "UNCERTAIN", 50000, None, "other-hash", None, None, a.now()))
+        self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
+
     def test_http_error_keeps_reserved_budget_and_halts(self):
         self.enable_owner_inference()
         rid = "test-provider-uncertain"
