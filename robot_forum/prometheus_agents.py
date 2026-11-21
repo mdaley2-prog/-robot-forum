@@ -283,15 +283,23 @@ def account(db, callid, data):
     try:
         cost = Decimal(str(data["usage"]["cost"]))
         if not cost.is_finite() or cost < 0:
-            raise ValueError("negative cost")
+            raise ValueError("missing, negative, or nonfinite provider charge")
         charged = int((cost * Decimal(1_000_000)).to_integral_value(
             rounding=ROUND_CEILING))
-        response = data["choices"][0]["message"]["content"]
-        if not isinstance(response, str) or len(response) > 12000:
-            raise ValueError("invalid response body")
     except (ValueError, KeyError, IndexError, TypeError, ArithmeticError):
         uncertain(db, callid)
-        raise RoundError("provider_cost_or_response_uncertain")
+        record_failure(db, callid, "invalid_response")
+        raise RoundError("provider_usage_cost_missing_uncertain") from None
+    try:
+        if "error" in data or data["choices"][0].get("finish_reason") == "error":
+            raise ValueError("model returned error")
+        response = data["choices"][0]["message"]["content"]
+        if not isinstance(response, str) or not response.strip() or len(response) > 12000:
+            raise ValueError("missing or invalid model text")
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        uncertain(db, callid)
+        record_failure(db, callid, "invalid_response")
+        raise RoundError("provider_content_invalid_cost_uncertain") from None
     if charged > RESERVED_PER_CALL:
         uncertain(db, callid)
         raise RoundError("provider_cost_exceeded_reservation")
@@ -340,19 +348,25 @@ async def provider_preflight(key, client=None):
 
 async def call_agent(db, client, rid, role, model, prompt):
     callid = reserve(db, rid, role, model, prompt)
+    # Ask OpenRouter to include the billed cost explicitly, rather than
+    # relying on a provider's optional default usage fields.
+    payload = {
+        "model": model,
+        "messages": [{"role": "system", "content": SYSTEM},
+                     {"role": "user", "content": prompt}],
+        "usage": {"include": True},
+        "provider": {"max_price": {
+            "prompt": 5, "completion": 25, "request": 0.01},
+            "require_parameters": True, "allow_fallbacks": False},
+    }
+    # Reasoning models can consume tokens before emitting visible JSON.
+    # Use the model-specific Chat Completions output-budget parameter.
+    if model == EXPLORER_MODEL:
+        payload["max_completion_tokens"] = 1600
+    else:
+        payload["max_tokens"] = 1200
     try:
-        data = await json_request(client, "POST", "chat/completions", json={
-            "model": model,
-            "messages": [{"role": "system", "content": SYSTEM},
-                         {"role": "user", "content": prompt}],
-            # GPT-5 Mini rejects non-default temperature values. With
-            # require_parameters=true the extra field can also prevent routing.
-            # Use its default sampler rather than silently weakening routing.
-            "max_tokens": 750,
-            "provider": {"max_price": {
-                "prompt": 5, "completion": 25, "request": 0.01},
-                "require_parameters": True, "allow_fallbacks": False},
-        })
+        data = await json_request(client, "POST", "chat/completions", json=payload)
     except httpx.HTTPStatusError as exc:
         # HTTP errors may be rejected before a provider request appears in
         # Activity. Still retain the cost reservation until reconciled.

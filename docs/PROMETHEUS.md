@@ -175,6 +175,30 @@ The saved report for the failed round includes both the unchanged
 `UNCERTAIN` entry and the `owner_attestation` evidence code. The record is
 an owner assertion, not a statement of independently verified provider billing.
 
+## Second live request — November 21, 2026
+
+After owner attestation of the original November 20 rejection, a new one-shot
+model challenge was launched under the existing lifetime and provider limits.
+The provider preflight passed, but the researcher completion did not satisfy
+the lab's accounting and response invariants:
+`provider_cost_or_response_uncertain`.
+The first model's response may have been billed. No skeptic call completed.
+The lab stored a **new UNCERTAIN** cost reservation and halted.
+
+The code originally relied on `usage.cost` being present by default.
+OpenRouter documentation instructs clients to opt in via
+`"usage": {"include": true}`. The revised request opts in explicitly
+and uses model-specific output-budget fields, with more room for
+reasoning models to generate visible JSON. Future errors are split between
+`provider_usage_cost_missing_uncertain` and
+`provider_content_invalid_cost_uncertain` without persisting response
+bodies, prices inferred from token counts, or credentials.
+
+**No further paid retries are authorized automatically.** The new UNCERTAIN
+reservation remains blocked and counted in the $2 ceiling until its own
+provider billing evidence is gathered. The original November 20 owner
+attestation does **not** apply to this new call.
+
 ## Future research work
 
 The next stage should introduce model-authored **preregistered competing**
