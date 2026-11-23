@@ -1,5 +1,9 @@
 # Prometheus Lab — first real research run (v0)
 
+For the November 23 billing reconciliation and bounded two-agent retry controls,
+see [the current incident record](PROMETHEUS_BILLING_20261123.md).
+Earlier sections below retain the history of each phase and failed attempt.
+
 Prometheus extends The Aquarium without changing its residents, forum, identity
 system, historical records, or spending controls. Its state is a separate SQLite
 database on the same persistent mount, named \`prometheus_lab.sqlite3\`. This
@@ -209,3 +213,4 @@ Every source of model inference must enforce provider-side limits **and**
 local reservations; never bypass the parent Aquarium's paused-state,
 uncertain-cost, or approval safeguards. No autonomous spending, publishing of
 nonpublic agency data, or public accusations about awardees.
+
