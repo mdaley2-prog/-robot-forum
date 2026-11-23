@@ -123,7 +123,8 @@ class AgentChallengeTests(unittest.TestCase):
             # GPT-5 mini does not accept a custom temperature. Do not send it.
             self.assertNotIn("temperature", body)
             self.assertNotIn("max_tokens", body)
-            self.assertEqual(body["max_completion_tokens"], 1600)
+            self.assertEqual(body["max_completion_tokens"], 4000)
+            self.assertEqual(body["reasoning"], {"effort": "low"})
             self.assertEqual(body["usage"], {"include": True})
             self.assertFalse(body["provider"]["allow_fallbacks"])
             self.assertTrue(body["provider"]["require_parameters"])
@@ -169,7 +170,7 @@ class AgentChallengeTests(unittest.TestCase):
         self.assertEqual(record["inference_calls"][0]["failure_category"], "invalid_response")
         self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
 
-    def test_accounted_cost_with_no_visible_text_stays_uncertain(self):
+    def test_known_charge_is_preserved_even_without_visible_text(self):
         self.enable_owner_inference()
         rid = "blank-output-test"
         self.assertTrue(a.start(self.db, rid))
@@ -183,11 +184,13 @@ class AgentChallengeTests(unittest.TestCase):
             async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
                 return await a.call_agent(self.db, client, rid, "explorer",
                                           a.EXPLORER_MODEL, "FY24-only")
-        with self.assertRaisesRegex(a.RoundError,"provider_content_invalid_cost_uncertain"):
+        with self.assertRaisesRegex(a.RoundError,"provider_content_invalid_cost_accounted"):
             asyncio.run(run())
         record = a.public_round(self.db, rid)
-        self.assertEqual(record["inference_calls"][0]["state"], "UNCERTAIN")
-        self.assertEqual(a.check_budget(self.db), "lab_outstanding_inference")
+        self.assertEqual(record["inference_calls"][0]["state"], "ACCOUNTED")
+        self.assertEqual(record["inference_calls"][0]["charged_microusd"], 3000)
+        self.assertEqual(record["inference_calls"][0]["finish_reason"], "length")
+        self.assertIsNone(a.check_budget(self.db))
 
     def test_skeptic_keeps_claude_compatible_max_tokens(self):
         self.enable_owner_inference()
@@ -320,3 +323,4 @@ class AgentChallengeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

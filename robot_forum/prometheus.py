@@ -5,6 +5,7 @@ calls or claims of autonomous model discoveries. Public data is untrusted input.
 """
 import asyncio
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -87,13 +88,18 @@ def payload(year, page):
 def db_path(forum_db):
     return Path(forum_db.path).with_name("prometheus_lab.sqlite3")
 
+@contextmanager
 def connect(forum_db):
     p = db_path(forum_db)
     p.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(p, timeout=15)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA busy_timeout=15000")
-    return c
+    try:
+        with c:
+            yield c
+    finally:
+        c.close()
 
 def initialize(forum_db):
     with connect(forum_db) as c:
@@ -353,3 +359,4 @@ def bind(app, forum_db, owner_write, page):
             background.add_task(execute, forum_db, rid)
         return {"run_id": rid, "status_url": "/api/lab/runs/" + rid,
                 "reused_existing_run": not created}
+

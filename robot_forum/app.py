@@ -77,6 +77,14 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
                 print("PROMETHEUS_BILLING_RECONCILIATION " + outcome, flush=True)
             except prometheus_agents.RoundError as exc:
                 print("PROMETHEUS_BILLING_RECONCILIATION blocked " + str(exc), flush=True)
+        charged_evidence = os.getenv("PROMETHEUS_RECONCILE_BILLED_SCREENSHOT", "")
+        if charged_evidence:
+            try:
+                outcome = prometheus_agents.reconcile_billed_screenshot(
+                    db, prometheus_agents.BILLING_ROUND, charged_evidence)
+                print("PROMETHEUS_CHARGED_RECONCILIATION " + outcome, flush=True)
+            except prometheus_agents.RoundError as exc:
+                print("PROMETHEUS_CHARGED_RECONCILIATION blocked " + str(exc), flush=True)
         residents_disabled = os.getenv("AQUARIUM_RESIDENT_LOOP_DISABLED", "false").lower() in ("true", "1")
         task=asyncio.create_task(residents.loop()) if run_scheduler and not residents_disabled else None
         # One-shot bounded experiment; agent stage is separately gated and
@@ -625,3 +633,4 @@ def create_app(path=None,admin_password=None,site_url=None,dry_run=None,run_sche
     return app
 
 app=create_app()
+
